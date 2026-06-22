@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800;900&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700&display=swap');
+
+@theme {
+  --color-west-beige: #d4c3a1;
+  --color-west-gold: #e8b923;
+  --color-west-brown: #8a705a;
+  --color-west-soft: #a39282;
+  --color-west-red: #c4451a;
+  --color-west-dark: #0c0908;
+  --color-west-board: #1a130f;
+  --color-west-wood: #3d2d21;
+  --color-west-frame: #2d2119;
+  
+  --font-serif: "Cinzel", "Georgia", serif;
+  --font-sans: "Special Elite", "Courier New", system-ui, sans-serif;
+  --font-mono: "Courier Prime", monospace;
+}
+
+body {
+  background-color: var(--color-west-dark);
+  color: var(--color-west-beige);
+  font-family: var(--font-sans);
+}
+
+/* Custom background grid pattern for old parchment or dusty trail maps */
+.bg-grid-pattern {
+  background-image: repeating-linear-gradient(0deg, #3d2d21 0px, transparent 1px), repeating-linear-gradient(90deg, #3d2d21 0px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Custom Western Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0c0908;
+  border-left: 1px solid #2d2119;
+}
+::-webkit-scrollbar-thumb {
+  background: #3d2d21;
+  border: 1px solid #1a130f;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8a705a;
+}

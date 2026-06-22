@@ -1,0 +1,6 @@
+{
+  "name": "Rogue Pistoleros",
+  "description": "A procedural Wild West roguelike game with overland map travel, turn-based tactical combat, reputation choices, quest contracts, and skill leveling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
