@@ -1,4 +1,4 @@
-# 🏜️ Frontier Tactics: Wild West Turn-Based RPG (v0.9 Beta)
+# 🏜️ Rogue Pistolero: Wild West Turn-Based RPG (v0.9 Beta)
 
 *Dust on your boots, iron on your hip, and a bounty to collect.*
 
