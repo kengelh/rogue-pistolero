@@ -70,6 +70,23 @@ import {
 } from "lucide-react";
 import { FrontierAudio } from "./utils/AudioSynth";
 
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Ignore security errors in sandboxed iframes
+    }
+  },
+};
+
 export default function App() {
   const [isMuted, setIsMuted] = useState(true); // Default muted to comply with browser policy
   const [isGodModeOpen, setIsGodModeOpen] = useState(false);
@@ -247,6 +264,45 @@ export default function App() {
       FrontierAudio.playMusic("world");
     } else if (activeView === "town") {
       FrontierAudio.playMusic("town");
+
+      // Auto-fill canteen and remove hydration effects upon entering a city
+      setPlayer((prev) => {
+        let needsUpdate = false;
+        if ((prev.hoursDehydrated || 0) > 0) {
+          needsUpdate = true;
+        }
+        if (prev.hydration < (prev.maxHydration ?? 100)) {
+          needsUpdate = true;
+        }
+
+        const hasCanteen = prev.inventory.some((i) => i.id === "canteen");
+        const canteenFull = prev.inventory.every(
+          (i) => i.id !== "canteen" || i.count >= 5,
+        );
+        if (hasCanteen && !canteenFull) {
+          needsUpdate = true;
+        }
+
+        if (!needsUpdate) return prev;
+
+        const updatedInv = prev.inventory.map((i) =>
+          i.id === "canteen" ? { ...i, count: Math.max(i.count, 5) } : i,
+        );
+
+        setTimeout(() => {
+          addLogMessage(
+            "💧 TOWN WELCOME: Your trail canteens have been refilled with clean well water, and dehydration effects are completely gone!",
+            "loot",
+          );
+        }, 50);
+
+        return {
+          ...prev,
+          hoursDehydrated: 0,
+          hydration: prev.maxHydration ?? 100,
+          inventory: updatedInv,
+        };
+      });
     } else if (activeView === "combat") {
       // Handled inside CombatView.tsx to trigger 'duel' then 'combat' (tactical)!
     } else {
@@ -2105,14 +2161,14 @@ export default function App() {
       );
 
       const currentHighScore = parseInt(
-        localStorage.getItem("frontierHighScoreDays") || "0",
+        safeLocalStorage.getItem("frontierHighScoreDays") || "0",
         10,
       );
       if (
         player.stats?.daysSurvived &&
         player.stats.daysSurvived > currentHighScore
       ) {
-        localStorage.setItem(
+        safeLocalStorage.setItem(
           "frontierHighScoreDays",
           player.stats.daysSurvived.toString(),
         );
@@ -2142,7 +2198,7 @@ export default function App() {
       passedSectors,
     };
     try {
-      localStorage.setItem("frontierSave", JSON.stringify(saveData));
+      safeLocalStorage.setItem("frontierSave", JSON.stringify(saveData));
       addLogMessage("💾 Game saved successfully.", "system");
     } catch (err) {
       addLogMessage("⚠️ Failed to save game.", "danger");
@@ -2151,7 +2207,7 @@ export default function App() {
 
   const handleLoadGame = () => {
     try {
-      const saveDataString = localStorage.getItem("frontierSave");
+      const saveDataString = safeLocalStorage.getItem("frontierSave");
       if (saveDataString) {
         const saveData = JSON.stringify(JSON.parse(saveDataString));
         const data = JSON.parse(saveData);
@@ -2936,6 +2992,7 @@ export default function App() {
 
           {/* Guide and menu settings */}
           <div className="flex items-center gap-1.5 pl-4 ml-2 border-l border-[#bfae96]/60">
+            {/* God Mode Commented Out
             <button
               onClick={() => setIsGodModeOpen(true)}
               className="w-10 h-10 border border-[#bfae96] bg-[#dcd1b9] rounded flex justify-center items-center text-[#664d36] hover:bg-[#cbae82] hover:text-[#3d2d21] object-contain transition-colors cursor-pointer mr-1 relative group"
@@ -2945,6 +3002,7 @@ export default function App() {
                 God Mode
               </div>
             </button>
+            */}
 
             <button
               id="btn-sound-toggle"
@@ -3233,9 +3291,9 @@ export default function App() {
                     `📝 BAPTIZED: Known formally on the registry bounds as ${cleanFirst} ${cleanLast}.`,
                     "system",
                   );
-                  FrontierAudio.setMute(false);
-                  setIsMuted(false);
-                  FrontierAudio.playMusic("world");
+                  // FrontierAudio.setMute(false);
+                  // setIsMuted(false);
+                  // FrontierAudio.playMusic("world");
                 }}
                 className="w-full sm:w-auto bg-[#3d2d21] hover:bg-[#4d3a2b] text-[#8c6b0c] py-3 px-8 rounded-sm border-b-4 border-[#1a130f] uppercase tracking-[0.2em] font-bold text-xs transition-colors cursor-pointer"
               >
@@ -3738,7 +3796,7 @@ export default function App() {
                       Days Survived
                       <span className="text-[8px] opacity-70 border-t border-[#4a3928]/30 pt-0.5 mt-0.5">
                         Top Record:{" "}
-                        {localStorage.getItem("frontierHighScoreDays") || 0}
+                        {safeLocalStorage.getItem("frontierHighScoreDays") || 0}
                       </span>
                     </span>
                   </div>

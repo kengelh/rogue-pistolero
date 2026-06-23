@@ -1,4 +1,5 @@
 import cowboyDuelBg from "../assets/images/duel_bg_1780491608169-1.png";
+import overlandImg from "../assets/images/overland_1780566810461.png";
 import tacticalAllies from "../assets/img_tactical/allies.png";
 import tacticalPinkerton from "../assets/img_tactical/pinkerton.png";
 import tacticalNative1 from "../assets/img_tactical/native1.jpg";
@@ -51,7 +52,13 @@ interface CombatViewProps {
     lootItems: InventoryItem[],
   ) => void;
   onDefeat: () => void;
-  combatType: "bounty" | "robbery" | "nest_clearing" | "ambush" | "camp_ambush" | "duel";
+  combatType:
+    | "bounty"
+    | "robbery"
+    | "nest_clearing"
+    | "ambush"
+    | "camp_ambush"
+    | "duel";
   difficultyRisk: number;
   onEquipWeapon?: (itemId: string) => void; // Sidearm swap callback
   onUpdatePlayer?: (player: Player) => void;
@@ -159,13 +166,15 @@ export const CombatView: React.FC<CombatViewProps> = ({
     const ammoItem = player.inventory.find((i) => i.id === ammoItemId);
     return ammoItem ? ammoItem.count : 0;
   });
-  const baseApFromLevel = Math.min(
-    12,
-    Math.round(
-      7 + (player.campMovementLvl || 0) + Math.max(0, player.level - 1) * 0.5,
-    ),
-  ) * ((player.hydration ?? 100) <= 0 ? 0.5 : 1.0);
-  const playerEffectiveRange = player.weapon.range + (player.perks.includes("eagle_eye") ? 1 : 0);
+  const baseApFromLevel =
+    Math.min(
+      12,
+      Math.round(
+        7 + (player.campMovementLvl || 0) + Math.max(0, player.level - 1) * 0.5,
+      ),
+    ) * ((player.hydration ?? 100) <= 0 ? 0.5 : 1.0);
+  const playerEffectiveRange =
+    player.weapon.range + (player.perks.includes("eagle_eye") ? 1 : 0);
   const [ap, _setApRaw] = useState(baseApFromLevel); // Action Points pool
   const apRef = React.useRef(baseApFromLevel);
   const setAp = (val) => {
@@ -187,9 +196,17 @@ export const CombatView: React.FC<CombatViewProps> = ({
   useEffect(() => {
     if (onTriggerTip) {
       if (combatType === "duel") {
-        onTriggerTip("duel", "The High Noon Duel", "In a duel, wait for the DRAW! flare, then click PRECISELY on your enemy faster than they shoot you.");
+        onTriggerTip(
+          "duel",
+          "The High Noon Duel",
+          "In a duel, wait for the DRAW! flare, then click PRECISELY on your enemy faster than they shoot you.",
+        );
       } else {
-        onTriggerTip("combat", "Tactical Combat", "Duck behind cover (📦/🪨) to reduce incoming chance to hit! You have Action Points each turn. Moving costs 1 AP, shooting costs 2-3 AP depending on your weapon.");
+        onTriggerTip(
+          "combat",
+          "Tactical Combat",
+          "Duck behind cover (📦/🪨) to reduce incoming chance to hit! You have Action Points each turn. Moving costs 1 AP, shooting costs 2-3 AP depending on your weapon.",
+        );
       }
     }
   }, [combatType, onTriggerTip]);
@@ -726,8 +743,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
         7 +
           (player.campMovementLvl || 0) +
           Math.max(0, player.level - 1) * 0.5 -
-          (chosenWeather.id === "heatwave" ? 1 : 0)
-      )
+          (chosenWeather.id === "heatwave" ? 1 : 0),
+      ),
     );
     if ((player.hydration ?? 100) <= 0) startAp = Math.floor(startAp * 0.5);
     setAp(startAp);
@@ -753,7 +770,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
           type = "rail" as any; // Stationary Cannon placement cell
         } else if (combatType === "camp_ambush" && x === 4 && y === 4) {
           type = "camp_fire";
-        } else if (combatType === "camp_ambush" && Math.abs(x - 4) <= 1 && Math.abs(y - 4) <= 1) {
+        } else if (
+          combatType === "camp_ambush" &&
+          Math.abs(x - 4) <= 1 &&
+          Math.abs(y - 4) <= 1
+        ) {
           type = "empty";
         } else {
           const rand = Math.random();
@@ -1153,14 +1174,23 @@ export const CombatView: React.FC<CombatViewProps> = ({
       if (chosenBiome.id === "train_wagon") {
         y = Math.round(0 + Math.random() * 3); // Spreads them further down the car
       }
-      
+
       if (combatType === "camp_ambush") {
         // Attack from margins
         const edge = Math.floor(Math.random() * 4);
-        if (edge === 0) { x = Math.floor(Math.random() * GRID_SIZE); y = 0; }
-        else if (edge === 1) { x = Math.floor(Math.random() * GRID_SIZE); y = GRID_SIZE - 1; }
-        else if (edge === 2) { x = 0; y = Math.floor(Math.random() * GRID_SIZE); }
-        else { x = GRID_SIZE - 1; y = Math.floor(Math.random() * GRID_SIZE); }
+        if (edge === 0) {
+          x = Math.floor(Math.random() * GRID_SIZE);
+          y = 0;
+        } else if (edge === 1) {
+          x = Math.floor(Math.random() * GRID_SIZE);
+          y = GRID_SIZE - 1;
+        } else if (edge === 2) {
+          x = 0;
+          y = Math.floor(Math.random() * GRID_SIZE);
+        } else {
+          x = GRID_SIZE - 1;
+          y = Math.floor(Math.random() * GRID_SIZE);
+        }
       }
 
       let enemyType: CombatActor["type"] = "bandit";
@@ -1366,18 +1396,40 @@ export const CombatView: React.FC<CombatViewProps> = ({
           type: isBetraying ? "bandit" : "posse",
           hp: posseMember.hp,
           maxHp: posseMember.maxHp,
-          x: combatType === "camp_ambush" && !isBetraying
-            ? 4 + [{dx: -1, dy: 1}, {dx: 1, dy: 1}, {dx: -1, dy: 0}, {dx: 1, dy: 0}, {dx: 0, dy: -1}, {dx: -1, dy: -1}, {dx: 1, dy: -1}][idx % 7].dx
-            : Math.min(
-                8,
-                Math.max(
-                  0,
-                  4 + (idx % 2 === 0 ? 1 : -1) * (Math.floor(idx / 2) + 1),
+          x:
+            combatType === "camp_ambush" && !isBetraying
+              ? 4 +
+                [
+                  { dx: -1, dy: 1 },
+                  { dx: 1, dy: 1 },
+                  { dx: -1, dy: 0 },
+                  { dx: 1, dy: 0 },
+                  { dx: 0, dy: -1 },
+                  { dx: -1, dy: -1 },
+                  { dx: 1, dy: -1 },
+                ][idx % 7].dx
+              : Math.min(
+                  8,
+                  Math.max(
+                    0,
+                    4 + (idx % 2 === 0 ? 1 : -1) * (Math.floor(idx / 2) + 1),
+                  ),
                 ),
-              ),
-          y: combatType === "camp_ambush" && !isBetraying 
-            ? 4 + [{dx: -1, dy: 1}, {dx: 1, dy: 1}, {dx: -1, dy: 0}, {dx: 1, dy: 0}, {dx: 0, dy: -1}, {dx: -1, dy: -1}, {dx: 1, dy: -1}][idx % 7].dy 
-            : isBetraying ? 1 : 8,
+          y:
+            combatType === "camp_ambush" && !isBetraying
+              ? 4 +
+                [
+                  { dx: -1, dy: 1 },
+                  { dx: 1, dy: 1 },
+                  { dx: -1, dy: 0 },
+                  { dx: 1, dy: 0 },
+                  { dx: 0, dy: -1 },
+                  { dx: -1, dy: -1 },
+                  { dx: 1, dy: -1 },
+                ][idx % 7].dy
+              : isBetraying
+                ? 1
+                : 8,
           dmg: posseMember.dmg,
           range: posseMember.range,
           clip: 6,
@@ -1463,7 +1515,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       initialK[e.id] = { x: e.x, y: e.y, name: e.name };
     });
     setLastKnownLocations(initialK);
-    
+
     // Explicitly set the player's position for this combat scenario
     setPlayerPos({
       x: 4,
@@ -1495,7 +1547,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
     if (currentIsNight || chosenWeather.id !== "clear") {
       setShowEnvModal(true);
     }
-  }, [combatType, difficultyRisk, player.campMovementLvl, forcedTimeOfDay, forcedWeather, player.stats]);
+  }, [
+    combatType,
+    difficultyRisk,
+    player.campMovementLvl,
+    forcedTimeOfDay,
+    forcedWeather,
+    player.stats,
+  ]);
 
   // Update lastKnownLocations overlay when enemies move or player looks at them
   useEffect(() => {
@@ -1703,7 +1762,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
       if (hit) {
         if (player.perks.includes("lucky") && Math.random() < 0.1) {
-          logsToAdd.push(`🍀 LUCKY JACK: You miraculously dodged the ambush shot!`);
+          logsToAdd.push(
+            `🍀 LUCKY JACK: You miraculously dodged the ambush shot!`,
+          );
         } else {
           let baseEnemyDmg = fastestEnemy.damage;
           if (player.perks.includes("thick_skin")) {
@@ -2058,10 +2119,17 @@ export const CombatView: React.FC<CombatViewProps> = ({
       ? forcedTimeOfDay === "night"
       : gameTimeHour <= 5 || gameTimeHour >= 19;
 
-  const isCellIlluminatedEnvironmentally = (cx: number, cy: number): boolean => {
+  const isCellIlluminatedEnvironmentally = (
+    cx: number,
+    cy: number,
+  ): boolean => {
     // Check environmental light sources
     for (const cell of grid) {
-      if (cell.type === "camp_fire" || cell.type === "lantern" || cell.type === "fire") {
+      if (
+        cell.type === "camp_fire" ||
+        cell.type === "lantern" ||
+        cell.type === "fire"
+      ) {
         // 3x3 radius: dx <= 1 and dy <= 1
         if (Math.abs(cx - cell.x) <= 1 && Math.abs(cy - cell.y) <= 1) {
           return true;
@@ -2911,7 +2979,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
           Math.abs(enemy.x - tx) <= (provokedRockslide ? 2 : 1) &&
           Math.abs(enemy.y - ty) <= (provokedRockslide ? 2 : 1);
         if (insideBox && !enemy.isDead) {
-          let dmg = Math.round(35 + Math.random() * 20) + (player.perks.includes("dynamite_expert") ? 25 : 0);
+          let dmg =
+            Math.round(35 + Math.random() * 20) +
+            (player.perks.includes("dynamite_expert") ? 25 : 0);
           if (provokedRockslide) dmg += Math.round(20 + Math.random() * 30);
 
           const remainingHp = Math.max(0, enemy.hp - dmg);
@@ -2921,7 +2991,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           if (
             enemy.type !== "scorpion" &&
             remainingHp > 0 &&
-            remainingHp <= enemy.maxHp * (player.perks.includes("intimidation") ? 0.5 : 0.3)
+            remainingHp <=
+              enemy.maxHp * (player.perks.includes("intimidation") ? 0.5 : 0.3)
           ) {
             surrenderFlag = true;
             addLog(
@@ -3518,7 +3589,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
     if (onUpdatePlayer) {
       let condition =
         player.weapon?.condition !== undefined ? player.weapon.condition : 100;
-      const deterioration = (0.25 + Math.random() * 0.25) * (player.perks.includes("tinkerer") ? 0.5 : 1.0);
+      const deterioration =
+        (0.25 + Math.random() * 0.25) *
+        (player.perks.includes("tinkerer") ? 0.5 : 1.0);
       condition = Math.max(0, condition - deterioration);
       onUpdatePlayer({
         ...player,
@@ -3676,7 +3749,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
     // Scoped weapon slower shot AP check
     let fireApCost = hasScope ? 6 : 3;
-    const isPistol = player.weapon.ammoType === "pistol" || !player.weapon.ammoType;
+    const isPistol =
+      player.weapon.ammoType === "pistol" || !player.weapon.ammoType;
     if (isPistol && player.perks.includes("fanning")) {
       fireApCost = Math.max(1, fireApCost - 1);
     }
@@ -3705,7 +3779,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
       player.weapon?.condition !== undefined ? player.weapon.condition : 100;
 
     // Decrease condition slightly from firing (0.25% to 0.5% per shot)
-    const deterioration = (0.25 + Math.random() * 0.25) * (player.perks.includes("tinkerer") ? 0.5 : 1.0);
+    const deterioration =
+      (0.25 + Math.random() * 0.25) *
+      (player.perks.includes("tinkerer") ? 0.5 : 1.0);
     condition = Math.max(0, condition - deterioration);
 
     // Update weapon and skills state
@@ -3988,7 +4064,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
               if (
                 !isScorpion &&
                 remainingHp > 0 &&
-                remainingHp <= e.maxHp * (player.perks.includes("intimidation") ? 0.5 : 0.3)
+                remainingHp <=
+                  e.maxHp * (player.perks.includes("intimidation") ? 0.5 : 0.3)
               ) {
                 surrenderFlag = true;
                 addLog(
@@ -4670,7 +4747,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       );
       let baseAp = baseLevelAp - (combatWeather.id === "heatwave" ? 1 : 0);
       if ((player.hydration ?? 100) <= 0) baseAp = Math.floor(baseAp * 0.5);
-      
+
       let newAp = baseAp - (isLegInjured ? 2 : 0);
       setAp(newAp);
       setTurn("player");
@@ -5051,7 +5128,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
             baseEnemyDmg = Math.round(baseEnemyDmg * 1.35);
           }
 
-          if (hitSuccess && !isFriendlyAI && targetPos.x === playerPos.x && targetPos.y === playerPos.y) {
+          if (
+            hitSuccess &&
+            !isFriendlyAI &&
+            targetPos.x === playerPos.x &&
+            targetPos.y === playerPos.y
+          ) {
             if (player.perks.includes("lucky") && Math.random() < 0.1) {
               addLog(`🍀 LUCKY JACK: You miraculously dodged the shot!`);
               hitSuccess = false;
@@ -5486,7 +5568,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     )}
                     {p.id === "player" ? (
                       <img
-                        src="/images/overland_1780566810461.png"
+                        src={overlandImg}
                         className={`h-40 md:h-56 object-contain filter drop-shadow-[0_10px_15px_rgba(0,0,0,0.8)] transition-all duration-300 ${activeDuelist?.id === p.id && duelStage === "shooting_sequence" ? "brightness-125" : "brightness-90"} ${p.hp <= 0 ? "rotate-90 translate-y-12" : ""} ${duelStage === "drawing" ? "-translate-y-6 -rotate-6 scale-110 brightness-150" : ""}`}
                         style={{ imageRendering: "pixelated" }}
                       />
@@ -5769,7 +5851,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
             className={`px-3 py-1.5 text-[10px] font-bold font-serif uppercase rounded border flex items-center gap-1.5 flex-shrink-0 transition-all ${turn === "player" ? "bg-[#c4451a] text-white border-red-950 scale-[1.02] shadow-md" : "bg-transparent text-[#a85a32] border-[#c4451a]/40 opacity-70"}`}
           >
             <img
-              src="/images/overland_1780566810461.png"
+              src={overlandImg}
               className="h-3 object-contain brightness-0 opacity-80"
               style={{
                 filter:
@@ -6035,7 +6117,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
               if (visibleEnemyAt && turn === "player" && !isAimingCannon) {
                 let overlayPct = 0;
                 let apCost = hasScope ? 6 : 3;
-                const isPistol = player.weapon.ammoType === "pistol" || !player.weapon.ammoType;
+                const isPistol =
+                  player.weapon.ammoType === "pistol" ||
+                  !player.weapon.ammoType;
                 if (isPistol && player.perks.includes("fanning")) {
                   apCost = Math.max(1, apCost - 1);
                 }
@@ -6065,9 +6149,23 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
                 hitChanceOverlay = (
                   <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-[#2d1b0a] border border-[#a26829] text-[#e8dec7] font-bold text-[8px] font-sans px-1.5 py-0.5 rounded-sm whitespace-nowrap z-50 flex items-center gap-1 shadow-lg pointer-events-none">
-                    <span className={overlayPct > 50 ? "text-green-400" : "text-amber-500"}>{overlayPct}% Hit</span>
+                    <span
+                      className={
+                        overlayPct > 50 ? "text-green-400" : "text-amber-500"
+                      }
+                    >
+                      {overlayPct}% Hit
+                    </span>
                     <span className="text-[#a89073]">|</span>
-                    <span className={apRef.current >= apCost ? "text-sky-300" : "text-red-500"}>-{apCost} AP</span>
+                    <span
+                      className={
+                        apRef.current >= apCost
+                          ? "text-sky-300"
+                          : "text-red-500"
+                      }
+                    >
+                      -{apCost} AP
+                    </span>
                   </div>
                 );
               }
@@ -6144,7 +6242,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                         </div>
                       )}
                       <img
-                        src="/images/overland_1780566810461.png"
+                        src={overlandImg}
                         alt="player"
                         draggable={false}
                         className={`h-10 md:h-12 w-auto object-contain drop-shadow-md select-none ${isNight && !isCellIlluminatedAtNight(playerPos.x, playerPos.y) ? "brightness-[2] contrast-150 drop-shadow-[0_0_8px_rgba(255,255,255,0.2)] opacity-80" : ""}`}
@@ -6352,20 +6450,21 @@ export const CombatView: React.FC<CombatViewProps> = ({
             {/* Visual AP Pips */}
             <span className="flex items-center gap-1.5 px-2 py-1 bg-[#dcd1b9] border border-[#bfae96] rounded-sm shadow-md">
               {Array.from({
-                length: Math.min(
-                  20,
-                  Math.round(
-                    7 +
-                      (player.campMovementLvl || 0) +
-                      Math.max(0, player.level - 1) * 0.5,
-                  ),
-                ) - (isLegInjured ? 2 : 0)
+                length:
+                  Math.min(
+                    20,
+                    Math.round(
+                      7 +
+                        (player.campMovementLvl || 0) +
+                        Math.max(0, player.level - 1) * 0.5,
+                    ),
+                  ) - (isLegInjured ? 2 : 0),
               }).map((_, i) => (
                 <div
                   key={i}
                   className={`w-2 h-2.5 sm:w-2.5 sm:h-3.5 rounded-[1px] border ${
-                    i < ap 
-                      ? "bg-[#c4451a] border-[#6b1e06] shadow-[0_0_3px_#c4451a]" 
+                    i < ap
+                      ? "bg-[#c4451a] border-[#6b1e06] shadow-[0_0_3px_#c4451a]"
                       : "bg-[#bfae96]/30 border-[#bfae96]/50"
                   }`}
                 />
@@ -6496,7 +6595,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
           {/* Action Trigger Grid buttons */}
           <div className="grid grid-cols-2 gap-2">
-            {playerClip < (player.weapon.maxClip + (player.weaponUpgrades?.clipBonus || 0)) && (
+            {playerClip <
+              player.weapon.maxClip +
+                (player.weaponUpgrades?.clipBonus || 0) && (
               <button
                 id="action-reload"
                 onClick={handleReload}
@@ -6507,14 +6608,18 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   isAimingCannon
                 }
                 className={`col-span-1 py-2.5 px-3 rounded-sm font-bold font-serif uppercase tracking-wider text-[10px] transition-all flex items-center justify-center gap-1.5 focus:outline-none border-b-2 disabled:opacity-30 cursor-pointer ${
-                  playerClip === 0 
-                    ? "bg-[#c4451a] text-white border-red-950 animate-pulse hover:bg-red-800" 
+                  playerClip === 0
+                    ? "bg-[#c4451a] text-white border-red-950 animate-pulse hover:bg-red-800"
                     : "bg-[#dfd4bd] text-[#8c6b0c] hover:bg-[#3d2d21] border-black"
                 }`}
               >
-                <RefreshCw size={12} className={playerClip === 0 ? "text-white" : "text-[#8c6b0c]"} />
+                <RefreshCw
+                  size={12}
+                  className={playerClip === 0 ? "text-white" : "text-[#8c6b0c]"}
+                />
                 <span>
-                  Reload ({player.perks.includes("fast_hands") ? "0 AP" : "1 AP"})
+                  Reload (
+                  {player.perks.includes("fast_hands") ? "0 AP" : "1 AP"})
                 </span>
               </button>
             )}
@@ -6528,7 +6633,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 apRef.current < 3 ||
                 isAimingCannon
               }
-              className={`col-span-1 py-2.5 px-3 rounded-sm font-bold font-serif uppercase tracking-[0.1em] text-[10px] transition-all flex items-center justify-center gap-1.5 bg-[#1f2937] hover:bg-[#111827] text-gray-300 border-b-2 border-black disabled:opacity-30 cursor-pointer focus:outline-none shadow-inner ${playerClip >= (player.weapon.maxClip + (player.weaponUpgrades?.clipBonus || 0)) ? "col-span-2" : ""}`}
+              className={`col-span-1 py-2.5 px-3 rounded-sm font-bold font-serif uppercase tracking-[0.1em] text-[10px] transition-all flex items-center justify-center gap-1.5 bg-[#1f2937] hover:bg-[#111827] text-gray-300 border-b-2 border-black disabled:opacity-30 cursor-pointer focus:outline-none shadow-inner ${playerClip >= player.weapon.maxClip + (player.weaponUpgrades?.clipBonus || 0) ? "col-span-2" : ""}`}
             >
               <span className="text-xl leading-none">⏱️</span>
               <span>Overwatch</span>
@@ -6547,17 +6652,38 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
             {/* Trail Saddlebags Consumables Section */}
             {(() => {
-              const dynCount = player.inventory.filter((i) => i.id === "dynamite").length + emergencyDynamite;
-              const whiskeyCount = player.inventory.filter((i) => i.id === "whiskey").length;
-              const elixirCount = player.inventory.filter((i) => i.id === "elixir").length;
-              const tourniquetCount = player.inventory.filter((i) => i.id === "tourniquet").length;
+              const dynCount =
+                player.inventory.filter((i) => i.id === "dynamite").length +
+                emergencyDynamite;
+              const whiskeyCount = player.inventory.filter(
+                (i) => i.id === "whiskey",
+              ).length;
+              const elixirCount = player.inventory.filter(
+                (i) => i.id === "elixir",
+              ).length;
+              const tourniquetCount = player.inventory.filter(
+                (i) => i.id === "tourniquet",
+              ).length;
 
               const showDynamite = dynCount > 0 || isAimingDynamite;
               const showWhiskey = whiskeyCount > 0 && playerHp < player.maxHp;
-              const showElixir = elixirCount > 0 && (playerHp < player.maxHp || playerPoisonTurns > 0);
-              const showTourniquet = tourniquetCount > 0 && (playerHp < player.maxHp || playerBleedTurns > 0 || isLegInjured || isArmInjured);
-              
-              if (!showDynamite && !showWhiskey && !showElixir && !showTourniquet) return null;
+              const showElixir =
+                elixirCount > 0 &&
+                (playerHp < player.maxHp || playerPoisonTurns > 0);
+              const showTourniquet =
+                tourniquetCount > 0 &&
+                (playerHp < player.maxHp ||
+                  playerBleedTurns > 0 ||
+                  isLegInjured ||
+                  isArmInjured);
+
+              if (
+                !showDynamite &&
+                !showWhiskey &&
+                !showElixir &&
+                !showTourniquet
+              )
+                return null;
 
               return (
                 <div className="col-span-2 border-t border-[#bfae96] pt-2.5 mt-1">
@@ -6601,7 +6727,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
                             : "bg-[#dfd4bd] border-[#bfae96] text-[#2d2119] hover:bg-[#3d2d21]"
                         }`}
                       >
-                        🧨 {isAimingDynamite ? "Cancel Aim" : "Aim Dynamite"} ({dynCount} left, 1 AP)
+                        🧨 {isAimingDynamite ? "Cancel Aim" : "Aim Dynamite"} (
+                        {dynCount} left, 1 AP)
                       </button>
                     )}
 
@@ -6691,8 +6818,6 @@ export const CombatView: React.FC<CombatViewProps> = ({
             )}
           </div>
         </div>
-
-
       </div>
 
       {/* Environment Detail Modal */}

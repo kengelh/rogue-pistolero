@@ -44,7 +44,7 @@ Launch the local development server:
 npm run dev
 ```
 
-**4. These boots are made for walking:**
+**4. Enter the Frontier:**
 Open your browser and navigate to `http://localhost:3000` (or the port specified in terminal) to start playing.
 
 ## 🚀 Deployment

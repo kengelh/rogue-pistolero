@@ -1110,31 +1110,7 @@ export const TownView: React.FC<TownViewProps> = ({
                     </button>
                   )}
 
-                  <button
-                    onClick={() => {
-                      onUpdatePlayer((prev) => {
-                        const hasCanteen = prev.inventory.find(
-                          (i) => i.id === "canteen" && i.count >= 0,
-                        );
-                        if (!hasCanteen) return prev;
-                        return {
-                          ...prev,
-                          inventory: prev.inventory.map((i) =>
-                            i.id === "canteen"
-                              ? { ...i, count: Math.max(i.count, 5) }
-                              : i,
-                          ),
-                          hydration: prev.maxHydration ?? 100,
-                        };
-                      });
-                      alert(
-                        "Filled up trail canteens with crisp well water and drank your fill.",
-                      );
-                    }}
-                    className="w-full py-2 bg-[#1e4a6d] hover:bg-[#1a3a4d] border border-[#2e6a9d]/50 text-white font-bold text-xs font-serif uppercase tracking-wider rounded"
-                  >
-                    🚰 Drink & Refill Canteens at Well
-                  </button>
+
                 </div>
               </div>
 

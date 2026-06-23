@@ -1,7 +1,25 @@
-import React, { useState } from 'react';
-import { Player, InventoryItem } from '../types';
-import { Shield, Sparkles, Heart, Droplets, Target, Award, Trash2, ShieldAlert, Users, Scale, AlertTriangle, ArrowUp, ChevronDown, ChevronRight, Package, Map } from 'lucide-react';
-import { PlayerAvatar, PlayerAppearance } from './PlayerAvatar';
+import React, { useState } from "react";
+import { Player, InventoryItem } from "../types";
+import overlandImg from "../assets/images/overland_1780566810461.png";
+import {
+  Shield,
+  Sparkles,
+  Heart,
+  Droplets,
+  Target,
+  Award,
+  Trash2,
+  ShieldAlert,
+  Users,
+  Scale,
+  AlertTriangle,
+  ArrowUp,
+  ChevronDown,
+  ChevronRight,
+  Package,
+  Map,
+} from "lucide-react";
+import { PlayerAvatar, PlayerAppearance } from "./PlayerAvatar";
 
 interface CharacterSheetProps {
   player: Player;
@@ -16,25 +34,35 @@ interface CharacterSheetProps {
   onUpdateAppearance?: (appearance: PlayerAppearance) => void;
 }
 
-export function getItemWeight(item: { id: string, name: string, type: string }): number {
-  if (item.id === 'whiskey') return 1.0;
-  if (item.id === 'elixir') return 1.0;
-  if (item.id === 'ammo_pistol') return 1.0;
-  if (item.id === 'ammo_rifle') return 2.0;
-  if (item.id === 'ammo_shotgun') return 2.0;
-  if (item.id === 'ammo_box') return 3.0; // fallback
-  if (item.id === 'bandage') return 0.5;
-  if (item.id === 'gunpowder') return 1.5;
-  if (item.id === 'glass_scope') return 1.0;
-  if (item.id === 'safe_springs') return 0.5;
-  if (item.id === 'dynamite') return 1.5;
-  if (item.id === 'lockpick') return 0.2;
-  if (item.id === 'ancient_relic') return 8.0;
-  if (item.id.startsWith('wpn_') || item.type === 'weapon') {
+export function getItemWeight(item: {
+  id: string;
+  name: string;
+  type: string;
+}): number {
+  if (item.id === "whiskey") return 1.0;
+  if (item.id === "elixir") return 1.0;
+  if (item.id === "ammo_pistol") return 1.0;
+  if (item.id === "ammo_rifle") return 2.0;
+  if (item.id === "ammo_shotgun") return 2.0;
+  if (item.id === "ammo_box") return 3.0; // fallback
+  if (item.id === "bandage") return 0.5;
+  if (item.id === "gunpowder") return 1.5;
+  if (item.id === "glass_scope") return 1.0;
+  if (item.id === "safe_springs") return 0.5;
+  if (item.id === "dynamite") return 1.5;
+  if (item.id === "lockpick") return 0.2;
+  if (item.id === "ancient_relic") return 8.0;
+  if (item.id.startsWith("wpn_") || item.type === "weapon") {
     const n = item.name.toLowerCase();
-    if (n.includes('shotgun')) return 10.0;
-    if (n.includes('rifle')) return 12.0;
-    if (n.includes('revolver') || n.includes('colt') || n.includes('pistol') || n.includes('peacemaker')) return 3.0;
+    if (n.includes("shotgun")) return 10.0;
+    if (n.includes("rifle")) return 12.0;
+    if (
+      n.includes("revolver") ||
+      n.includes("colt") ||
+      n.includes("pistol") ||
+      n.includes("peacemaker")
+    )
+      return 3.0;
     return 6.0;
   }
   return 0.5; // default
@@ -49,12 +77,12 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
   onRenameWeapon,
   onDismissPosseMember,
   onOpenGunsmith,
-  onUpdateAppearance
+  onUpdateAppearance,
 }) => {
   const [isEditingHorseName, setIsEditingHorseName] = useState(false);
-  const [tempHorseName, setTempHorseName] = useState('');
+  const [tempHorseName, setTempHorseName] = useState("");
   const [isEditingWeaponName, setIsEditingWeaponName] = useState(false);
-  const [tempWeaponName, setTempWeaponName] = useState('');
+  const [tempWeaponName, setTempWeaponName] = useState("");
   const [isEditingAppearance, setIsEditingAppearance] = useState(false);
   const [tempAppearance, setTempAppearance] = useState<PlayerAppearance>(
     player.appearance || {
@@ -64,19 +92,21 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
       shirtColor: "white",
       hairStyle: "short",
       hairColor: "brown",
-      facialHair: "none"
-    }
+      facialHair: "none",
+    },
   );
-  const [openCategories, setOpenCategories] = useState<{ [key: string]: boolean }>({
+  const [openCategories, setOpenCategories] = useState<{
+    [key: string]: boolean;
+  }>({
     weapon: true,
     consumable: true,
     value: true,
     weapon_part: false,
-    map_note: false
+    map_note: false,
   });
 
   const toggleCategory = (cat: string) => {
-    setOpenCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
+    setOpenCategories((prev) => ({ ...prev, [cat]: !prev[cat] }));
   };
 
   const handleSaveHorseName = () => {
@@ -93,49 +123,104 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
     setIsEditingWeaponName(false);
   };
 
-  const oatsAvailable = player.inventory.some(item => item.id === 'hay_bale');
+  const oatsAvailable = player.inventory.some((item) => item.id === "hay_bale");
 
   const getReputationLabel = (rep: number) => {
-    if (rep <= -80) return { label: 'MOST WANTED OUTLAW (Gallows Threat)', color: 'text-[#c4451a] animate-pulse font-serif' };
-    if (rep <= -40) return { label: 'Desperado Bandit', color: 'text-rose-400' };
-    if (rep <= -15) return { label: 'Petty Thief', color: 'text-pink-300' };
-    if (rep < 15) return { label: 'Neutral Frontier Drifter', color: 'text-[#4a3928] italic' };
-    if (rep < 40) return { label: 'Deputy Protector', color: 'text-sky-300' };
-    if (rep < 80) return { label: 'Honorable Marshal', color: 'text-[#2a8ec4] font-serif' };
-    return { label: 'LEGENDARY FRONTIER HERO', color: 'text-[#8c6b0c] font-bold animate-pulse font-serif' };
+    if (rep <= -80)
+      return {
+        label: "MOST WANTED OUTLAW (Gallows Threat)",
+        color: "text-[#c4451a] animate-pulse font-serif",
+      };
+    if (rep <= -40)
+      return { label: "Desperado Bandit", color: "text-rose-400" };
+    if (rep <= -15) return { label: "Petty Thief", color: "text-pink-300" };
+    if (rep < 15)
+      return {
+        label: "Neutral Frontier Drifter",
+        color: "text-[#4a3928] italic",
+      };
+    if (rep < 40) return { label: "Deputy Protector", color: "text-sky-300" };
+    if (rep < 80)
+      return { label: "Honorable Marshal", color: "text-[#2a8ec4] font-serif" };
+    return {
+      label: "LEGENDARY FRONTIER HERO",
+      color: "text-[#8c6b0c] font-bold animate-pulse font-serif",
+    };
   };
 
   const repStats = getReputationLabel(player.reputation);
 
   // Factions helpers
-  const getFactionLabel = (val: number, type: 'lawmen' | 'outlaws' | 'tribes') => {
-    if (type === 'lawmen') {
-      if (val >= 60) return { label: 'Regarded Deputy', color: 'text-sky-400' };
-      if (val >= 15) return { label: 'Law-at-heart', color: 'text-teal-400' };
-      if (val < -40) return { label: 'Wanted Bandit (Hostile)', color: 'text-red-500 font-bold' };
-      return { label: 'Drifter Bystander', color: 'text-[#5a4838]' };
-    } else if (type === 'outlaws') {
-      if (val >= 50) return { label: 'Gang Captain', color: 'text-rose-400' };
-      if (val >= 15) return { label: 'Rustler Friend', color: 'text-orange-300' };
-      if (val < -30) return { label: 'Snitch Target (Marked)', color: 'text-sky-500 font-semibold' };
-      return { label: 'Untrue Outlaw', color: 'text-[#5a4838]' };
+  const getFactionLabel = (
+    val: number,
+    type: "lawmen" | "outlaws" | "tribes",
+  ) => {
+    if (type === "lawmen") {
+      if (val >= 60) return { label: "Regarded Deputy", color: "text-sky-400" };
+      if (val >= 15) return { label: "Law-at-heart", color: "text-teal-400" };
+      if (val < -40)
+        return {
+          label: "Wanted Bandit (Hostile)",
+          color: "text-red-500 font-bold",
+        };
+      return { label: "Drifter Bystander", color: "text-[#5a4838]" };
+    } else if (type === "outlaws") {
+      if (val >= 50) return { label: "Gang Captain", color: "text-rose-400" };
+      if (val >= 15)
+        return { label: "Rustler Friend", color: "text-orange-300" };
+      if (val < -30)
+        return {
+          label: "Snitch Target (Marked)",
+          color: "text-sky-500 font-semibold",
+        };
+      return { label: "Untrue Outlaw", color: "text-[#5a4838]" };
     } else {
-      if (val >= 50) return { label: 'Sacred Pathfinder / Brother', color: 'text-amber-400' };
-      if (val >= 15) return { label: 'Respected Guest', color: 'text-yellow-600' };
-      if (val < -35) return { label: 'Tomb Raider (Hated)', color: 'text-red-600 font-bold' };
-      return { label: 'Stranger Traveler', color: 'text-[#5a4838]' };
+      if (val >= 50)
+        return {
+          label: "Sacred Pathfinder / Brother",
+          color: "text-amber-400",
+        };
+      if (val >= 15)
+        return { label: "Respected Guest", color: "text-yellow-600" };
+      if (val < -35)
+        return {
+          label: "Tomb Raider (Hated)",
+          color: "text-red-600 font-bold",
+        };
+      return { label: "Stranger Traveler", color: "text-[#5a4838]" };
     }
   };
 
   // Perk helpers
   const getPerkInfo = (perk: string) => {
     switch (perk) {
-      case 'deadeye': return { name: 'Deadeye Focus', desc: 'Increases tactical fire critical chance by +30%.' };
-      case 'fast_hands': return { name: 'Fast Hands', desc: 'Allows free instant weapon reloads in combat.' };
-      case 'hardy': return { name: 'Hardy Desert Horseman', desc: 'Allows faster desert movement and better endurance.' };
-      case 'silver_tongue': return { name: 'Silver Tongue', desc: 'Provides discounts of 20% at town shops.' };
-      case 'quickdraw': return { name: 'Quickdraw Specialist', desc: 'Always turns first in battles, preempting enemy fire.' };
-      default: return { name: perk, desc: 'Specialized perk' };
+      case "deadeye":
+        return {
+          name: "Deadeye Focus",
+          desc: "Increases tactical fire critical chance by +30%.",
+        };
+      case "fast_hands":
+        return {
+          name: "Fast Hands",
+          desc: "Allows free instant weapon reloads in combat.",
+        };
+      case "hardy":
+        return {
+          name: "Hardy Desert Horseman",
+          desc: "Allows faster desert movement and better endurance.",
+        };
+      case "silver_tongue":
+        return {
+          name: "Silver Tongue",
+          desc: "Provides discounts of 20% at town shops.",
+        };
+      case "quickdraw":
+        return {
+          name: "Quickdraw Specialist",
+          desc: "Always turns first in battles, preempting enemy fire.",
+        };
+      default:
+        return { name: perk, desc: "Specialized perk" };
     }
   };
 
@@ -144,35 +229,44 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
 
   // Calculate total carrying weight
   const totalWeight = parseFloat(
-    player.inventory.reduce((sum, item) => sum + getItemWeight(item) * item.count, 0).toFixed(1)
+    player.inventory
+      .reduce((sum, item) => sum + getItemWeight(item) * item.count, 0)
+      .toFixed(1),
   );
   const maxWeight = 40.0;
   const isOverburdened = totalWeight > maxWeight;
 
   return (
-    <div id="character-sheet-component" className="bg-[#f4ead5] border border-[#bfae96] p-5 rounded-sm space-y-4 flex flex-col h-full shadow-xl">
+    <div
+      id="character-sheet-component"
+      className="bg-[#f4ead5] border border-[#bfae96] p-5 rounded-sm space-y-4 flex flex-col h-full shadow-xl"
+    >
       {/* Top Banner Player Identity */}
       <div className="space-y-3">
         <div className="flex items-center justify-between border-b border-[#bfae96] pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-sm border border-[#e8b923]/30 flex items-center justify-center font-bold text-[#8c6b0c] text-lg bg-[#dcd1b9] overflow-hidden relative">
-              <img 
-                src={player.avatarImage || "/images/overland_1780566810461.png"} 
-                alt={`${player.name} Avatar`} 
-                className="absolute inset-0 w-full h-full object-cover scale-[1.3] transform translate-y-1 drop-shadow-md" 
-                style={{ imageRendering: 'pixelated' }} 
+              <img
+                src={player.avatarImage || overlandImg}
+                alt={`${player.name} Avatar`}
+                className="absolute inset-0 w-full h-full object-cover scale-[1.3] transform translate-y-1 drop-shadow-md"
+                style={{ imageRendering: "pixelated" }}
               />
             </div>
             <div>
-              <span className="text-[10px] uppercase tracking-widest text-[#664d36] font-serif block">Frontier Hero Card</span>
+              <span className="text-[10px] uppercase tracking-widest text-[#664d36] font-serif block">
+                Frontier Hero Card
+              </span>
               <h3 className="text-[#8c6b0c] font-bold uppercase tracking-wider text-sm flex items-center gap-1 font-serif mt-0.5">
-                {player.name || 'Silas Vane'}
+                {player.name || "Silas Vane"}
               </h3>
             </div>
           </div>
-          
+
           <div className="text-right flex flex-col items-end">
-            <span className="text-[9px] uppercase tracking-widest text-[#664d36] font-serif">XP TO NEXT</span>
+            <span className="text-[9px] uppercase tracking-widest text-[#664d36] font-serif">
+              XP TO NEXT
+            </span>
             <span className="text-xs font-mono text-[#4a3928] mt-0.5">
               {player.xp} / {player.xpToNextLevel} XP
             </span>
@@ -183,11 +277,13 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
         <div className="space-y-1 bg-[#e8dec7] p-2.5 rounded-sm border border-[#bfae96]/40">
           <div className="flex justify-between text-[9px] text-[#664d36] font-serif uppercase tracking-wider">
             <span>LEVEL & XP</span>
-            <span>{player.level} (Perks: {player.perks.length})</span>
+            <span>
+              {player.level} (Perks: {player.perks.length})
+            </span>
           </div>
           <div className="w-full h-2 bg-[#dcd1b9] rounded-full overflow-hidden border border-[#bfae96]/60">
-            <div 
-              className="h-full bg-gradient-to-r from-[#8a705a] to-[#e8b923] transition-all duration-300 shadow-[0_0_8px_#e8b923]" 
+            <div
+              className="h-full bg-gradient-to-r from-[#8a705a] to-[#e8b923] transition-all duration-300 shadow-[0_0_8px_#e8b923]"
               style={{ width: `${Math.min(100, xpPercentage)}%` }}
             />
           </div>
@@ -202,10 +298,12 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
             <span className="text-[#664d36] flex items-center gap-1 font-serif font-semibold text-[10px] tracking-wider">
               <Heart size={10} className="text-[#c4451a] fill-current" /> HP
             </span>
-            <span className="text-[#c4451a] font-bold font-mono text-xs">{player.hp}/{player.maxHp}</span>
+            <span className="text-[#c4451a] font-bold font-mono text-xs">
+              {player.hp}/{player.maxHp}
+            </span>
           </div>
           <div className="w-full h-2 bg-[#2d0a0a] rounded-full mt-1 border border-[#4d1a1a] overflow-hidden">
-            <div 
+            <div
               className="h-full bg-[#c4451a] rounded-full shadow-[0_0_8px_#c4451a] transition-all duration-300"
               style={{ width: `${Math.min(100, hpPercentage)}%` }}
             />
@@ -217,23 +315,34 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
       <div className="bg-[#e8dec7] border border-[#bfae96] p-3 rounded-sm space-y-2">
         <div className="flex justify-between items-center text-[10px] uppercase font-serif tracking-wider">
           <span className="text-[#664d36] flex items-center gap-1 font-bold">
-            <Scale size={11} className={isOverburdened ? 'text-red-500 animate-pulse' : 'text-[#8c6b0c]'} /> WEIGHT
+            <Scale
+              size={11}
+              className={
+                isOverburdened ? "text-red-500 animate-pulse" : "text-[#8c6b0c]"
+              }
+            />{" "}
+            WEIGHT
           </span>
-          <span className={`font-mono font-bold text-xs ${isOverburdened ? 'text-red-500' : 'text-[#8c6b0c]'}`}>
+          <span
+            className={`font-mono font-bold text-xs ${isOverburdened ? "text-red-500" : "text-[#8c6b0c]"}`}
+          >
             {totalWeight} / {maxWeight} LBS
           </span>
         </div>
-        
+
         <div className="w-full h-2.5 bg-[#dcd1b9] rounded-full overflow-hidden border border-[#bfae96] relative">
-          <div 
-            className={`h-full transition-all duration-300 ${isOverburdened ? 'bg-[#c4451a] shadow-[0_0_6px_red]' : 'bg-[#e8b923]'}`}
-            style={{ width: `${Math.min(100, (totalWeight / maxWeight) * 100)}%` }}
+          <div
+            className={`h-full transition-all duration-300 ${isOverburdened ? "bg-[#c4451a] shadow-[0_0_6px_red]" : "bg-[#e8b923]"}`}
+            style={{
+              width: `${Math.min(100, (totalWeight / maxWeight) * 100)}%`,
+            }}
           />
         </div>
 
         {isOverburdened && (
           <p className="text-[9px] text-[#c4451a] font-semibold flex items-center gap-1 bg-red-950/20 p-1 border border-red-950/40 rounded-sm">
-            <AlertTriangle size={10} /> OVERENCUMBERED: High travel costs & slower combat moves!
+            <AlertTriangle size={10} /> OVERENCUMBERED: High travel costs &
+            slower combat moves!
           </p>
         )}
       </div>
@@ -241,10 +350,14 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
       {/* Equipped Gun & Ammo Frame */}
       <div className="bg-[#dfd4bd] border border-[#bfae96] rounded-sm p-3.5 shadow-md">
         <div className="text-[10px] text-[#664d36] uppercase font-serif font-bold tracking-widest border-b border-[#bfae96] pb-1 flex justify-between">
-          <span className="flex items-center gap-1"><Target size={11} className="text-[#8c6b0c]"/> EQUIPPED WEAPON</span>
-          <span className="text-[#8c6b0c]">LOADED: {player.weapon.clip} RNDS</span>
+          <span className="flex items-center gap-1">
+            <Target size={11} className="text-[#8c6b0c]" /> EQUIPPED WEAPON
+          </span>
+          <span className="text-[#8c6b0c]">
+            LOADED: {player.weapon.clip} RNDS
+          </span>
         </div>
-        
+
         <div className="mt-2 flex justify-between items-start text-xs gap-2">
           <div className="space-y-1 flex-1 min-w-0">
             {isEditingWeaponName ? (
@@ -272,13 +385,21 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
               </div>
             ) : (
               <span className="text-[#8c6b0c] font-bold font-serif text-[12px] block flex items-center flex-wrap gap-1.5">
-                {player.weapon.customName ? `"${player.weapon.customName}" (${player.weapon.name})` : player.weapon.name}
-                {player.weaponUpgrades?.hasScope && <span className="text-[9px] text-teal-400 font-sans font-normal">(Scoped)</span>}
-                
+                {player.weapon.customName
+                  ? `"${player.weapon.customName}" (${player.weapon.name})`
+                  : player.weapon.name}
+                {player.weaponUpgrades?.hasScope && (
+                  <span className="text-[9px] text-teal-400 font-sans font-normal">
+                    (Scoped)
+                  </span>
+                )}
+
                 {(player.weapon.fightCount || 0) >= 50 && (
                   <button
                     onClick={() => {
-                      setTempWeaponName(player.weapon.customName || player.weapon.name);
+                      setTempWeaponName(
+                        player.weapon.customName || player.weapon.name,
+                      );
                       setIsEditingWeaponName(true);
                     }}
                     className="text-[9px] text-teal-400 hover:text-teal-300 underline cursor-pointer font-sans font-normal"
@@ -289,10 +410,20 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
               </span>
             )}
             <span className="text-[10px] text-[#4a3928] block leading-normal">
-              Power: <b className="text-[#c4451a] font-mono font-normal">{(player.weapon.dmg + (player.weaponUpgrades?.dmgBonus || 0))} HP</b> • Range: <b className="text-[#8c6b0c] font-mono font-normal">{(player.weapon.range + (player.weaponUpgrades?.rangeBonus || 0))} tiles</b>
+              Power:{" "}
+              <b className="text-[#c4451a] font-mono font-normal">
+                {player.weapon.dmg + (player.weaponUpgrades?.dmgBonus || 0)} HP
+              </b>{" "}
+              • Range:{" "}
+              <b className="text-[#8c6b0c] font-mono font-normal">
+                {player.weapon.range + (player.weaponUpgrades?.rangeBonus || 0)}{" "}
+                tiles
+              </b>
             </span>
             <span className="text-[8.5px] text-[#664d36] block">
-              Clip Cap: {player.weapon.maxClip + (player.weaponUpgrades?.clipBonus || 0)} Rnds • Crit Boost: +{(player.weaponUpgrades?.accuracyBonus || 0)}%
+              Clip Cap:{" "}
+              {player.weapon.maxClip + (player.weaponUpgrades?.clipBonus || 0)}{" "}
+              Rnds • Crit Boost: +{player.weaponUpgrades?.accuracyBonus || 0}%
             </span>
 
             {/* Weapon Fights Progress Bar */}
@@ -302,9 +433,11 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
                 <span>{player.weapon.fightCount || 0} / 50 Fights</span>
               </div>
               <div className="w-full h-1.5 bg-[#dcd1b9] rounded-full overflow-hidden border border-[#bfae96]/60">
-                <div 
-                  className={`h-full transition-all duration-300 ${ (player.weapon.fightCount || 0) >= 50 ? 'bg-teal-400 shadow-[0_0_4px_#2dd4bf]' : 'bg-[#e8b923]' }`}
-                  style={{ width: `${Math.min(100, ((player.weapon.fightCount || 0) / 50) * 100)}%` }}
+                <div
+                  className={`h-full transition-all duration-300 ${(player.weapon.fightCount || 0) >= 50 ? "bg-teal-400 shadow-[0_0_4px_#2dd4bf]" : "bg-[#e8b923]"}`}
+                  style={{
+                    width: `${Math.min(100, ((player.weapon.fightCount || 0) / 50) * 100)}%`,
+                  }}
                 />
               </div>
             </div>
@@ -312,20 +445,28 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
             {/* Weapon Condition */}
             <div className="pt-1 mt-1">
               <div className="flex justify-between items-center text-[8.5px] font-serif uppercase tracking-wider mb-0.5">
-                <span className={`${(player.weapon.condition ?? 100) < 40 ? 'text-red-500 animate-pulse' : 'text-[#664d36]'}`}>DURABILITY</span>
-                <span className={`${(player.weapon.condition ?? 100) < 40 ? 'text-red-500' : 'text-[#664d36]'}`}>{Math.round(player.weapon.condition ?? 100)}%</span>
+                <span
+                  className={`${(player.weapon.condition ?? 100) < 40 ? "text-red-500 animate-pulse" : "text-[#664d36]"}`}
+                >
+                  DURABILITY
+                </span>
+                <span
+                  className={`${(player.weapon.condition ?? 100) < 40 ? "text-red-500" : "text-[#664d36]"}`}
+                >
+                  {Math.round(player.weapon.condition ?? 100)}%
+                </span>
               </div>
               <div className="w-full h-1.5 bg-[#dcd1b9] rounded-full overflow-hidden border border-[#bfae96]/60 flex">
-                <div 
-                  className={`h-full transition-all duration-300 ${(player.weapon.condition ?? 100) < 40 ? 'bg-red-500' : 'bg-emerald-600'}`}
+                <div
+                  className={`h-full transition-all duration-300 ${(player.weapon.condition ?? 100) < 40 ? "bg-red-500" : "bg-emerald-600"}`}
                   style={{ width: `${player.weapon.condition ?? 100}%` }}
                 />
               </div>
               <div className="mt-1.5 flex justify-end items-center">
                 <div className="flex gap-1">
                   <button
-                     onClick={onOpenGunsmith}
-                     className="py-0.5 px-2 bg-[#1a130f] hover:bg-[#3d2d21] text-[#e8b923] text-[8px] uppercase tracking-wider rounded-xs font-bold border border-[#e8b923]/40 transition-colors"
+                    onClick={onOpenGunsmith}
+                    className="py-0.5 px-2 bg-[#1a130f] hover:bg-[#3d2d21] text-[#e8b923] text-[8px] uppercase tracking-wider rounded-xs font-bold border border-[#e8b923]/40 transition-colors"
                   >
                     Workbench
                   </button>
@@ -335,85 +476,114 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
           </div>
 
           <div className="text-right flex-shrink-0">
-            <span className="text-[#3d2d21] font-bold font-mono block">{player.inventory.find(i => i.id === `ammo_${player.weapon.ammoType || 'pistol'}`)?.count || 0} Cartridges</span>
-            <span className="text-[9px] text-[#664d36] uppercase tracking-wider font-serif">In belt</span>
+            <span className="text-[#3d2d21] font-bold font-mono block">
+              {player.inventory.find(
+                (i) => i.id === `ammo_${player.weapon.ammoType || "pistol"}`,
+              )?.count || 0}{" "}
+              Cartridges
+            </span>
+            <span className="text-[9px] text-[#664d36] uppercase tracking-wider font-serif">
+              In belt
+            </span>
           </div>
         </div>
       </div>
 
       {/* Skills Overview Frame */}
       <div className="bg-[#e8dec7] border border-[#bfae96] rounded-sm p-3.5 shadow-md space-y-3">
-        <div id="skills-overview-title" className="text-[10px] text-[#664d36] uppercase font-serif font-bold tracking-widest border-b border-[#bfae96] pb-1 flex justify-between">
+        <div
+          id="skills-overview-title"
+          className="text-[10px] text-[#664d36] uppercase font-serif font-bold tracking-widest border-b border-[#bfae96] pb-1 flex justify-between"
+        >
           <span>🎯 Skills Overview</span>
           <span className="text-[#8c6b0c]">Practice Makes Perfect</span>
         </div>
-        
+
         <div className="space-y-4">
-            <div className="flex justify-between items-center text-xs border-b border-stone-800 pb-2">
-              <div className="space-y-0.5">
-                <span className="text-[#2d2119] font-bold font-serif text-[11px] block">Pistol Handling:</span>
-                <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
-                  Improves accuracy with revolvers and colts.
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-teal-400 font-mono font-bold text-sm">{Math.floor(player.pistolSkill || 0)}%</span>
-                <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
-              </div>
+          <div className="flex justify-between items-center text-xs border-b border-stone-800 pb-2">
+            <div className="space-y-0.5">
+              <span className="text-[#2d2119] font-bold font-serif text-[11px] block">
+                Pistol Handling:
+              </span>
+              <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
+                Improves accuracy with revolvers and colts.
+              </span>
             </div>
-
-            <div className="flex justify-between items-center text-xs border-b border-stone-800 pb-2">
-              <div className="space-y-0.5 pr-2">
-                <span className="text-[#2d2119] font-bold font-serif text-[11px] block">Rifle Proficiency:</span>
-                <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
-                   Improves accuracy with repeaters and shotguns.
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-teal-400 font-mono font-bold text-sm">{Math.floor(player.rifleSkill || 0)}%</span>
-                <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
-              </div>
+            <div className="text-right">
+              <span className="text-teal-400 font-mono font-bold text-sm">
+                {Math.floor(player.pistolSkill || 0)}%
+              </span>
+              <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
             </div>
+          </div>
 
-            <div className="flex justify-between items-center text-xs border-b border-stone-800 pb-2">
-              <div className="space-y-0.5 pr-2">
-                <span className="text-[#2d2119] font-bold font-serif text-[11px] block">Reload Mastery:</span>
-                <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
-                   Every time you reload in combat, you gain mastery.
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-teal-400 font-mono font-bold text-sm">{Math.floor(player.reloadSkill || 0)}%</span>
-                <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
-              </div>
+          <div className="flex justify-between items-center text-xs border-b border-stone-800 pb-2">
+            <div className="space-y-0.5 pr-2">
+              <span className="text-[#2d2119] font-bold font-serif text-[11px] block">
+                Rifle Proficiency:
+              </span>
+              <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
+                Improves accuracy with repeaters and shotguns.
+              </span>
             </div>
-
-            <div className="flex justify-between items-center text-xs">
-              <div className="space-y-0.5 pr-2">
-                <span className="text-[#2d2119] font-bold font-serif text-[11px] block">Horsemanship:</span>
-                <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
-                   Riding increases your horse's overland speed.
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-teal-400 font-mono font-bold text-sm">{Math.floor(player.horsemanship || 0)}%</span>
-                <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
-              </div>
+            <div className="text-right">
+              <span className="text-teal-400 font-mono font-bold text-sm">
+                {Math.floor(player.rifleSkill || 0)}%
+              </span>
+              <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
             </div>
+          </div>
 
-            <div className="flex justify-between items-center text-xs">
-              <div className="space-y-0.5 pr-2">
-                <span className="text-[#2d2119] font-bold font-serif text-[11px] block">Silence:</span>
-                <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
-                   Move behind obstacles often to become stealthier.
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-teal-400 font-mono font-bold text-sm">{Math.floor(player.silenceSkill || 0)}%</span>
-                <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
-              </div>
+          <div className="flex justify-between items-center text-xs border-b border-stone-800 pb-2">
+            <div className="space-y-0.5 pr-2">
+              <span className="text-[#2d2119] font-bold font-serif text-[11px] block">
+                Reload Mastery:
+              </span>
+              <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
+                Every time you reload in combat, you gain mastery.
+              </span>
             </div>
+            <div className="text-right">
+              <span className="text-teal-400 font-mono font-bold text-sm">
+                {Math.floor(player.reloadSkill || 0)}%
+              </span>
+              <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
+            </div>
+          </div>
 
+          <div className="flex justify-between items-center text-xs">
+            <div className="space-y-0.5 pr-2">
+              <span className="text-[#2d2119] font-bold font-serif text-[11px] block">
+                Horsemanship:
+              </span>
+              <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
+                Riding increases your horse's overland speed.
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="text-teal-400 font-mono font-bold text-sm">
+                {Math.floor(player.horsemanship || 0)}%
+              </span>
+              <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center text-xs">
+            <div className="space-y-0.5 pr-2">
+              <span className="text-[#2d2119] font-bold font-serif text-[11px] block">
+                Silence:
+              </span>
+              <span className="text-[10px] text-[#4a3928] block leading-normal font-sans">
+                Move behind obstacles often to become stealthier.
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="text-teal-400 font-mono font-bold text-sm">
+                {Math.floor(player.silenceSkill || 0)}%
+              </span>
+              <span className="text-[9px] text-[#5a4838] block">MAX 200%</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -422,20 +592,36 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
         <div className="text-[10px] text-[#8c6b0c] uppercase font-bold tracking-widest font-serif flex items-center gap-1.5 border-b border-[#bfae96]/60 pb-1.5">
           <Users size={11} className="text-[#8c6b0c]" /> Faction Standings
         </div>
-        
+
         <div className="space-y-2 font-sans text-[11px]">
           {/* Faction 1: Lawmen */}
           <div className="flex flex-col">
             <div className="flex justify-between items-center">
-              <span className="text-[#2d2119] font-semibold">Federal Lawmen</span>
-              <span className={getFactionLabel(player.factionReputation?.lawmen ?? 0, 'lawmen').color}>
-                {getFactionLabel(player.factionReputation?.lawmen ?? 0, 'lawmen').label}
+              <span className="text-[#2d2119] font-semibold">
+                Federal Lawmen
+              </span>
+              <span
+                className={
+                  getFactionLabel(
+                    player.factionReputation?.lawmen ?? 0,
+                    "lawmen",
+                  ).color
+                }
+              >
+                {
+                  getFactionLabel(
+                    player.factionReputation?.lawmen ?? 0,
+                    "lawmen",
+                  ).label
+                }
               </span>
             </div>
             <div className="w-full h-1 bg-[#d4cbba] rounded-full mt-1 overflow-hidden border border-stone-850">
-              <div 
-                className="h-full bg-sky-500" 
-                style={{ width: `${(( (player.factionReputation?.lawmen ?? 0) + 100) / 200) * 100}%` }}
+              <div
+                className="h-full bg-sky-500"
+                style={{
+                  width: `${(((player.factionReputation?.lawmen ?? 0) + 100) / 200) * 100}%`,
+                }}
               />
             </div>
           </div>
@@ -444,14 +630,28 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
           <div className="flex flex-col border-t border-[#bfae96]/30 pt-1.5">
             <div className="flex justify-between items-center">
               <span className="text-[#2d2119] font-semibold">Outlaw Gangs</span>
-              <span className={getFactionLabel(player.factionReputation?.outlaws ?? 0, 'outlaws').color}>
-                {getFactionLabel(player.factionReputation?.outlaws ?? 0, 'outlaws').label}
+              <span
+                className={
+                  getFactionLabel(
+                    player.factionReputation?.outlaws ?? 0,
+                    "outlaws",
+                  ).color
+                }
+              >
+                {
+                  getFactionLabel(
+                    player.factionReputation?.outlaws ?? 0,
+                    "outlaws",
+                  ).label
+                }
               </span>
             </div>
             <div className="w-full h-1 bg-[#d4cbba] rounded-full mt-1 overflow-hidden border border-stone-850">
-              <div 
-                className="h-full bg-rose-500" 
-                style={{ width: `${(( (player.factionReputation?.outlaws ?? 0) + 100) / 200) * 100}%` }}
+              <div
+                className="h-full bg-rose-500"
+                style={{
+                  width: `${(((player.factionReputation?.outlaws ?? 0) + 100) / 200) * 100}%`,
+                }}
               />
             </div>
           </div>
@@ -459,15 +659,31 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
           {/* Faction 3: Tribes */}
           <div className="flex flex-col border-t border-[#bfae96]/30 pt-1.5">
             <div className="flex justify-between items-center">
-              <span className="text-[#2d2119] font-semibold">Native Tribes</span>
-              <span className={getFactionLabel(player.factionReputation?.tribes ?? 10, 'tribes').color}>
-                {getFactionLabel(player.factionReputation?.tribes ?? 10, 'tribes').label}
+              <span className="text-[#2d2119] font-semibold">
+                Native Tribes
+              </span>
+              <span
+                className={
+                  getFactionLabel(
+                    player.factionReputation?.tribes ?? 10,
+                    "tribes",
+                  ).color
+                }
+              >
+                {
+                  getFactionLabel(
+                    player.factionReputation?.tribes ?? 10,
+                    "tribes",
+                  ).label
+                }
               </span>
             </div>
             <div className="w-full h-1 bg-[#d4cbba] rounded-full mt-1 overflow-hidden border border-stone-850">
-              <div 
-                className="h-full bg-amber-500" 
-                style={{ width: `${(( (player.factionReputation?.tribes ?? 10) + 100) / 200) * 100}%` }}
+              <div
+                className="h-full bg-amber-500"
+                style={{
+                  width: `${(((player.factionReputation?.tribes ?? 10) + 100) / 200) * 100}%`,
+                }}
               />
             </div>
           </div>
@@ -510,10 +726,18 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
                   </div>
                 ) : (
                   <span className="text-stone-100 flex items-center justify-between w-full gap-2 block">
-                    <span className="truncate">{player.horseName || player.mount?.name || 'Kentucky Stallion'}</span>
+                    <span className="truncate">
+                      {player.horseName ||
+                        player.mount?.name ||
+                        "Kentucky Stallion"}
+                    </span>
                     <button
                       onClick={() => {
-                        setTempHorseName(player.horseName || player.mount?.name || 'Kentucky Stallion');
+                        setTempHorseName(
+                          player.horseName ||
+                            player.mount?.name ||
+                            "Kentucky Stallion",
+                        );
                         setIsEditingHorseName(true);
                       }}
                       className="text-[9px] text-[#71924c] hover:text-[#8bb45f] underline cursor-pointer font-sans font-normal shrink-0"
@@ -526,10 +750,20 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
             </div>
             {player.mount && (
               <div className="flex justify-between items-center text-[10px] font-mono mt-1 text-[#2f3d21]">
-                <span className="uppercase tracking-widest">{player.mount.type.replace('_', ' ')}</span>
-                <span className={player.hoursDehydrated && player.hoursDehydrated > 0 ? 'text-red-700 animate-pulse font-bold' : ''}>
-                  {(player.mount.baseSpeedMultiplier).toFixed(2)}x Speed
-                  {player.hoursDehydrated && player.hoursDehydrated > 0 ? ' (THIRSTY!)' : ''}
+                <span className="uppercase tracking-widest">
+                  {player.mount.type.replace("_", " ")}
+                </span>
+                <span
+                  className={
+                    player.hoursDehydrated && player.hoursDehydrated > 0
+                      ? "text-red-700 animate-pulse font-bold"
+                      : ""
+                  }
+                >
+                  {player.mount.baseSpeedMultiplier.toFixed(2)}x Speed
+                  {player.hoursDehydrated && player.hoursDehydrated > 0
+                    ? " (THIRSTY!)"
+                    : ""}
                 </span>
               </div>
             )}
@@ -539,16 +773,24 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
 
       {/* Active Posse Frame */}
       <div className="bg-[#d9d5db] border border-[#3e2d3e]/80 rounded-sm p-3.5 shadow-md space-y-2.5">
-        <div id="militia-posse-title" className="text-[10px] text-[#ae8fdb] uppercase font-bold tracking-widest font-serif flex items-center justify-between border-b border-[#3e2d3e]/40 pb-1.5">
+        <div
+          id="militia-posse-title"
+          className="text-[10px] text-[#ae8fdb] uppercase font-bold tracking-widest font-serif flex items-center justify-between border-b border-[#3e2d3e]/40 pb-1.5"
+        >
           <span className="flex items-center gap-1.5">
-            <Users size={12} className="text-[#a78bfa] animate-pulse" /> Frontier Militia Posse ({player.posse ? player.posse.length : 0} / 5)
+            <Users size={12} className="text-[#a78bfa] animate-pulse" />{" "}
+            Frontier Militia Posse ({player.posse ? player.posse.length : 0} /
+            5)
           </span>
-          <span className="text-[#5a4838] font-mono text-[9px]">Enlisted Protection</span>
+          <span className="text-[#5a4838] font-mono text-[9px]">
+            Enlisted Protection
+          </span>
         </div>
 
-        {(!player.posse || player.posse.length === 0) ? (
+        {!player.posse || player.posse.length === 0 ? (
           <p className="text-[10px] text-[#5a4838] italic text-center py-2 font-serif">
-            No active gunfighters under contract. Visit a town Saloon to enlist protection!
+            No active gunfighters under contract. Visit a town Saloon to enlist
+            protection!
           </p>
         ) : (
           <div className="space-y-2">
@@ -560,13 +802,22 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
             </div>
             <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
               {player.posse.map((member) => (
-                <div key={member.id} className="bg-[#1e1324]/20 hover:bg-[#1e1324]/40 border border-purple-950/30 p-2 rounded-sm flex flex-col gap-1 text-[11px]">
+                <div
+                  key={member.id}
+                  className="bg-[#1e1324]/20 hover:bg-[#1e1324]/40 border border-purple-950/30 p-2 rounded-sm flex flex-col gap-1 text-[11px]"
+                >
                   <div className="flex justify-between items-start gap-1">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-sm shrink-0">{member.portrait || '🤠'}</span>
+                      <span className="text-sm shrink-0">
+                        {member.portrait || "🤠"}
+                      </span>
                       <div className="min-w-0">
-                        <span className="text-[#c084fc] font-bold font-serif text-[11px] block truncate">{member.name}</span>
-                        <span className="text-[8.5px] text-[#e9d5ff]/70 block">{member.role}</span>
+                        <span className="text-[#c084fc] font-bold font-serif text-[11px] block truncate">
+                          {member.name}
+                        </span>
+                        <span className="text-[8.5px] text-[#e9d5ff]/70 block">
+                          {member.role}
+                        </span>
                       </div>
                     </div>
                     {onDismissPosseMember && (
@@ -580,7 +831,9 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
                   </div>
 
                   <div className="flex justify-between text-[8px] text-[#5a4838] font-mono border-t border-purple-950/20 pt-1">
-                    <span>❤️ HP: {member.hp}/{member.maxHp}</span>
+                    <span>
+                      ❤️ HP: {member.hp}/{member.maxHp}
+                    </span>
                     <span>💥 DMG: {member.dmg}</span>
                     <span>🎯 RNG: {member.range}</span>
                   </div>
@@ -608,18 +861,48 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
         ) : (
           <div className="space-y-2 overflow-y-auto max-h-[220px] pr-1">
             {[
-              { id: 'weapon', label: 'Weapons & Ammo', Icon: Target, iconColor: 'text-[#8c6b0c]' },
-              { id: 'consumable', label: 'Medical & Provisions', Icon: Droplets, iconColor: 'text-[#c4451a]' },
-              { id: 'value', label: 'Valuables', Icon: Sparkles, iconColor: 'text-amber-500' },
-              { id: 'weapon_part', label: 'Components', Icon: Package, iconColor: 'text-[#664d36]' },
-              { id: 'map_note', label: 'Intel', Icon: Map, iconColor: 'text-blue-500' }
-            ].map(category => {
-              const itemsInCategory = player.inventory.filter(item => item.type === category.id);
+              {
+                id: "weapon",
+                label: "Weapons & Ammo",
+                Icon: Target,
+                iconColor: "text-[#8c6b0c]",
+              },
+              {
+                id: "consumable",
+                label: "Medical & Provisions",
+                Icon: Droplets,
+                iconColor: "text-[#c4451a]",
+              },
+              {
+                id: "value",
+                label: "Valuables",
+                Icon: Sparkles,
+                iconColor: "text-amber-500",
+              },
+              {
+                id: "weapon_part",
+                label: "Components",
+                Icon: Package,
+                iconColor: "text-[#664d36]",
+              },
+              {
+                id: "map_note",
+                label: "Intel",
+                Icon: Map,
+                iconColor: "text-blue-500",
+              },
+            ].map((category) => {
+              const itemsInCategory = player.inventory.filter(
+                (item) => item.type === category.id,
+              );
               if (itemsInCategory.length === 0) return null;
 
               return (
-                <div key={category.id} className="border border-[#bfae96]/40 rounded-sm overflow-hidden mb-1">
-                  <button 
+                <div
+                  key={category.id}
+                  className="border border-[#bfae96]/40 rounded-sm overflow-hidden mb-1"
+                >
+                  <button
                     onClick={() => toggleCategory(category.id)}
                     className="w-full bg-[#e8dec7] hover:bg-[#dcd1b9] px-2 py-1.5 flex justify-between items-center transition-colors text-left"
                   >
@@ -627,35 +910,57 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
                       <category.Icon size={11} className={category.iconColor} />
                       {category.label} ({itemsInCategory.length})
                     </div>
-                    {openCategories[category.id] ? <ChevronDown size={12} className="text-[#664d36]" /> : <ChevronRight size={12} className="text-[#664d36]" />}
+                    {openCategories[category.id] ? (
+                      <ChevronDown size={12} className="text-[#664d36]" />
+                    ) : (
+                      <ChevronRight size={12} className="text-[#664d36]" />
+                    )}
                   </button>
                   {openCategories[category.id] && (
                     <div className="bg-[#f0e8d5] p-1.5 space-y-1">
-                      {itemsInCategory.map(item => {
+                      {itemsInCategory.map((item) => {
                         const weightItem = getItemWeight(item);
-                        const totalW = parseFloat((weightItem * item.count).toFixed(1));
+                        const totalW = parseFloat(
+                          (weightItem * item.count).toFixed(1),
+                        );
 
                         return (
-                          <div key={item.id} className="flex items-center justify-between bg-[#e8dec7] hover:bg-[#201712] hover:text-[#e8dec7] p-2 rounded-sm border border-[#bfae96]/60 transition-colors text-xs gap-1 group/item">
+                          <div
+                            key={item.id}
+                            className="flex items-center justify-between bg-[#e8dec7] hover:bg-[#201712] hover:text-[#e8dec7] p-2 rounded-sm border border-[#bfae96]/60 transition-colors text-xs gap-1 group/item"
+                          >
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between gap-1">
                                 <span className="text-[#8c6b0c] group-hover/item:text-[#e8b923] font-serif font-bold truncate block">
-                                  {item.name} {item.count > 1 && <span className="text-[#5a4838] group-hover/item:text-stone-400 text-[10px]">({item.count}x)</span>}
+                                  {item.name}{" "}
+                                  {item.count > 1 && (
+                                    <span className="text-[#5a4838] group-hover/item:text-stone-400 text-[10px]">
+                                      ({item.count}x)
+                                    </span>
+                                  )}
                                 </span>
-                                <span className="text-[8px] text-[#5a4838] group-hover/item:text-stone-400 font-mono flex-shrink-0">{totalW} lbs</span>
+                                <span className="text-[8px] text-[#5a4838] group-hover/item:text-stone-400 font-mono flex-shrink-0">
+                                  {totalW} lbs
+                                </span>
                               </div>
-                              <span className="text-[9px] text-[#5a4838] group-hover/item:text-stone-400 block truncate mt-0.5">{item.details}</span>
-                              
+                              <span className="text-[9px] text-[#5a4838] group-hover/item:text-stone-400 block truncate mt-0.5">
+                                {item.details}
+                              </span>
+
                               {/* Action button if the item is a backup weapon (Equip!) */}
-                              {item.type === 'weapon' && (item.id.startsWith('wpn_') || item.id === 'special_shotgun' || item.id === 'special_rifle') && onEquipWeapon && (
-                                <button
-                                  id={`equip-backup-${item.id}`}
-                                  onClick={() => onEquipWeapon(item.id)}
-                                  className="mt-1 px-1.5 py-0.5 bg-[#3d2d21] hover:bg-[#4d3a2b] text-[#8c6b0c] border border-[#8a705a]/60 text-[8px] uppercase font-bold tracking-wider rounded-sm font-serif cursor-pointer flex items-center gap-0.5"
-                                >
-                                  <ArrowUp size={8} /> Equip Sidearm
-                                </button>
-                              )}
+                              {item.type === "weapon" &&
+                                (item.id.startsWith("wpn_") ||
+                                  item.id === "special_shotgun" ||
+                                  item.id === "special_rifle") &&
+                                onEquipWeapon && (
+                                  <button
+                                    id={`equip-backup-${item.id}`}
+                                    onClick={() => onEquipWeapon(item.id)}
+                                    className="mt-1 px-1.5 py-0.5 bg-[#3d2d21] hover:bg-[#4d3a2b] text-[#8c6b0c] border border-[#8a705a]/60 text-[8px] uppercase font-bold tracking-wider rounded-sm font-serif cursor-pointer flex items-center gap-0.5"
+                                  >
+                                    <ArrowUp size={8} /> Equip Sidearm
+                                  </button>
+                                )}
                             </div>
 
                             {/* Discard button */}
@@ -684,10 +989,15 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
       {/* Perks list */}
       {player.perks.length > 0 && (
         <div className="bg-[#f4ead5] border border-[#bfae96] p-3 rounded-sm">
-          <span className="text-[9px] text-[#664d36] font-serif uppercase tracking-widest block border-b border-[#bfae96] pb-1.5 mb-1.5">Active Talent Perks</span>
+          <span className="text-[9px] text-[#664d36] font-serif uppercase tracking-widest block border-b border-[#bfae96] pb-1.5 mb-1.5">
+            Active Talent Perks
+          </span>
           <div className="flex flex-wrap gap-1">
-            {player.perks.map(p => (
-              <span key={p} className="text-[8px] uppercase tracking-wider bg-[#dfd4bd] text-[#8c6b0c] border border-[#bfae96] px-1.5 py-0.5 rounded-sm font-serif font-bold">
+            {player.perks.map((p) => (
+              <span
+                key={p}
+                className="text-[8px] uppercase tracking-wider bg-[#dfd4bd] text-[#8c6b0c] border border-[#bfae96] px-1.5 py-0.5 rounded-sm font-serif font-bold"
+              >
                 {getPerkInfo(p).name}
               </span>
             ))}
@@ -823,7 +1133,6 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
         </div>
       )
       */}
-
     </div>
   );
 };

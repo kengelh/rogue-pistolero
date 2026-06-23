@@ -5,8 +5,8 @@
 class ProceduralAudioEngine {
   private ctx: AudioContext | null = null;
   private mainGain: GainNode | null = null;
-  private isMuted: boolean = false;
-  private currentMode: 'world' | 'town' | 'duel' | 'combat' | null = null;
+  private isMuted: boolean = true;
+  private currentMode: "world" | "town" | "duel" | "combat" | null = null;
   private timerId: any = null;
   private noiseNode: AudioWorkletNode | ScriptProcessorNode | null = null;
 
@@ -17,13 +17,20 @@ class ProceduralAudioEngine {
   private initCtx() {
     if (this.ctx) return;
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AudioCtx();
       this.mainGain = this.ctx.createGain();
-      this.mainGain.gain.setValueAtTime(this.isMuted ? 0 : 0.15, this.ctx.currentTime);
+      this.mainGain.gain.setValueAtTime(
+        this.isMuted ? 0 : 0.15,
+        this.ctx.currentTime,
+      );
       this.mainGain.connect(this.ctx.destination);
     } catch (e) {
-      console.error('Frontier Audio Engine failed to initialize Web Audio API', e);
+      console.error(
+        "Frontier Audio Engine failed to initialize Web Audio API",
+        e,
+      );
     }
   }
 
@@ -33,7 +40,7 @@ class ProceduralAudioEngine {
       this.mainGain.gain.setValueAtTime(muted ? 0 : 0.15, this.ctx.currentTime);
     }
     // resume context if suspended
-    if (!muted && this.ctx && this.ctx.state === 'suspended') {
+    if (!muted && this.ctx && this.ctx.state === "suspended") {
       this.ctx.resume();
     }
   }
@@ -47,24 +54,24 @@ class ProceduralAudioEngine {
     return this.isMuted;
   }
 
-  public playMusic(mode: 'world' | 'town' | 'duel' | 'combat') {
+  public playMusic(mode: "world" | "town" | "duel" | "combat") {
     this.initCtx();
     if (this.currentMode === mode) return; // Already playing this mood!
     this.stop();
     this.currentMode = mode;
 
-    if (this.ctx && this.ctx.state === 'suspended') {
+    if (this.ctx && this.ctx.state === "suspended") {
       // browser protection bypass
       this.ctx.resume();
     }
 
-    if (mode === 'world') {
+    if (mode === "world") {
       this.startWorldLoop();
-    } else if (mode === 'town') {
+    } else if (mode === "town") {
       this.startTownLoop();
-    } else if (mode === 'duel') {
+    } else if (mode === "duel") {
       this.startDuelLoop();
-    } else if (mode === 'combat') {
+    } else if (mode === "combat") {
       this.startCombatLoop();
     }
   }
@@ -81,20 +88,23 @@ class ProceduralAudioEngine {
   public playClick() {
     this.initCtx();
     if (!this.ctx || this.isMuted) return;
-    
+
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-    
-    osc.type = 'triangle';
+
+    osc.type = "triangle";
     osc.frequency.setValueAtTime(600, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(120, this.ctx.currentTime + 0.05);
-    
+    osc.frequency.exponentialRampToValueAtTime(
+      120,
+      this.ctx.currentTime + 0.05,
+    );
+
     gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
-    
+
     osc.connect(gain);
     if (this.mainGain) gain.connect(this.mainGain);
-    
+
     osc.start();
     osc.stop(this.ctx.currentTime + 0.06);
   }
@@ -104,7 +114,7 @@ class ProceduralAudioEngine {
     this.initCtx();
     if (!this.ctx || this.isMuted) return;
     const now = this.ctx.currentTime;
-    
+
     // Low frequency whoosh
     const osc1 = this.ctx.createOscillator();
     const gain1 = this.ctx.createGain();
@@ -120,7 +130,7 @@ class ProceduralAudioEngine {
     // High frequency metal ring
     const osc2 = this.ctx.createOscillator();
     const gain2 = this.ctx.createGain();
-    osc2.type = 'sine';
+    osc2.type = "sine";
     osc2.frequency.setValueAtTime(2400, now + 0.05);
     osc2.frequency.exponentialRampToValueAtTime(1100, now + 0.25);
     gain2.gain.setValueAtTime(0.18, now + 0.05);
@@ -140,7 +150,7 @@ class ProceduralAudioEngine {
     // Deep boom
     const boom = this.ctx.createOscillator();
     const boomGain = this.ctx.createGain();
-    boom.type = 'sawtooth';
+    boom.type = "sawtooth";
     boom.frequency.setValueAtTime(150, now);
     boom.frequency.exponentialRampToValueAtTime(30, now + 0.25);
     boomGain.gain.setValueAtTime(0.6, now);
@@ -153,7 +163,7 @@ class ProceduralAudioEngine {
     // High snap noise simulation
     const snap = this.ctx.createOscillator();
     const snapGain = this.ctx.createGain();
-    snap.type = 'triangle';
+    snap.type = "triangle";
     snap.frequency.setValueAtTime(800, now);
     snap.frequency.exponentialRampToValueAtTime(1800, now + 0.06);
     snapGain.gain.setValueAtTime(0.4, now);
@@ -171,16 +181,16 @@ class ProceduralAudioEngine {
     if (!this.ctx) return;
     let step = 0;
     const pluckScale = [110, 165, 196, 220, 330, 440]; // A-minor pentatonic vibes
-    
+
     const tick = () => {
-      if (!this.ctx || this.currentMode !== 'world' || this.isMuted) return;
+      if (!this.ctx || this.currentMode !== "world" || this.isMuted) return;
       const now = this.ctx.currentTime;
 
       // Sparse plucked guitar note (every second tick)
       if (step % 2 === 0) {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-        osc.type = 'triangle';
+        osc.type = "triangle";
         const freq = pluckScale[Math.floor(Math.random() * pluckScale.length)];
         osc.frequency.setValueAtTime(freq, now);
         // decay
@@ -196,15 +206,18 @@ class ProceduralAudioEngine {
       if (step % 4 === 1) {
         const whistle = this.ctx.createOscillator();
         const whistleGain = this.ctx.createGain();
-        whistle.type = 'sine';
+        whistle.type = "sine";
         const baseFreq = 880 + Math.sin(step) * 110; // whistle pitch
         whistle.frequency.setValueAtTime(baseFreq, now);
-        whistle.frequency.linearRampToValueAtTime(baseFreq + (Math.random() > 0.5 ? 40 : -40), now + 1.6);
-        
+        whistle.frequency.linearRampToValueAtTime(
+          baseFreq + (Math.random() > 0.5 ? 40 : -40),
+          now + 1.6,
+        );
+
         whistleGain.gain.setValueAtTime(0.0, now);
         whistleGain.gain.linearRampToValueAtTime(0.04, now + 0.4);
         whistleGain.gain.exponentialRampToValueAtTime(0.001, now + 1.8);
-        
+
         whistle.connect(whistleGain);
         if (this.mainGain) whistleGain.connect(this.mainGain);
         whistle.start();
@@ -232,11 +245,11 @@ class ProceduralAudioEngine {
       [349, 440, 523], // F
       [349, 440, 523], // F
       [261, 329, 392], // C
-      [392, 493, 587]  // G combo turn
+      [392, 493, 587], // G combo turn
     ];
 
     const tick = () => {
-      if (!this.ctx || this.currentMode !== 'town' || this.isMuted) return;
+      if (!this.ctx || this.currentMode !== "town" || this.isMuted) return;
       const now = this.ctx.currentTime;
       const chordIdx = Math.floor(step / 2) % chords.length;
       const notes = chords[chordIdx];
@@ -246,7 +259,7 @@ class ProceduralAudioEngine {
         // Bass Note
         const bassOsc = this.ctx.createOscillator();
         const bassGain = this.ctx.createGain();
-        bassOsc.type = 'sine';
+        bassOsc.type = "sine";
         bassOsc.frequency.setValueAtTime(notes[0] / 2, now);
         bassGain.gain.setValueAtTime(0.2, now);
         bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
@@ -259,7 +272,7 @@ class ProceduralAudioEngine {
         notes.forEach((freq) => {
           const osc = this.ctx.createOscillator();
           const gain = this.ctx.createGain();
-          osc.type = 'triangle';
+          osc.type = "triangle";
           // Detune slightly for saloon piano honky-tonk effect!
           osc.frequency.setValueAtTime(freq + (Math.random() * 2 - 1), now);
           gain.gain.setValueAtTime(0.08, now);
@@ -284,13 +297,13 @@ class ProceduralAudioEngine {
     let step = 0;
 
     const tick = () => {
-      if (!this.ctx || this.currentMode !== 'duel' || this.isMuted) return;
+      if (!this.ctx || this.currentMode !== "duel" || this.isMuted) return;
       const now = this.ctx.currentTime;
 
       // Heartbeat double thud (every tick)
       const heart1 = this.ctx.createOscillator();
       const hGain1 = this.ctx.createGain();
-      heart1.type = 'sine';
+      heart1.type = "sine";
       heart1.frequency.setValueAtTime(55, now);
       heart1.frequency.linearRampToValueAtTime(20, now + 0.15);
       hGain1.gain.setValueAtTime(0.4, now);
@@ -302,7 +315,7 @@ class ProceduralAudioEngine {
 
       const heart2 = this.ctx.createOscillator();
       const hGain2 = this.ctx.createGain();
-      heart2.type = 'sine';
+      heart2.type = "sine";
       heart2.frequency.setValueAtTime(50, now + 0.2);
       heart2.frequency.linearRampToValueAtTime(15, now + 0.35);
       hGain2.gain.setValueAtTime(0.35, now + 0.2);
@@ -316,7 +329,7 @@ class ProceduralAudioEngine {
       if (step % 2 === 0) {
         const tickOsc = this.ctx.createOscillator();
         const tGain = this.ctx.createGain();
-        tickOsc.type = 'sine';
+        tickOsc.type = "sine";
         tickOsc.frequency.setValueAtTime(3200, now);
         tGain.gain.setValueAtTime(0.07, now);
         tGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
@@ -330,9 +343,9 @@ class ProceduralAudioEngine {
       if (step % 4 === 0) {
         const hum = this.ctx.createOscillator();
         const humGain = this.ctx.createGain();
-        hum.type = 'sine';
+        hum.type = "sine";
         hum.frequency.setValueAtTime(220, now);
-        humGain.gain.setValueAtTime(0.00, now);
+        humGain.gain.setValueAtTime(0.0, now);
         humGain.gain.linearRampToValueAtTime(0.03, now + 0.4);
         humGain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
         hum.connect(humGain);
@@ -354,14 +367,14 @@ class ProceduralAudioEngine {
     let step = 0;
 
     const tick = () => {
-      if (!this.ctx || this.currentMode !== 'combat' || this.isMuted) return;
+      if (!this.ctx || this.currentMode !== "combat" || this.isMuted) return;
       const now = this.ctx.currentTime;
 
       // Heavy tribal kick drum beat
-      if (step % 4 === 0 || step % 4 === 2 || (step % 8 === 7)) {
+      if (step % 4 === 0 || step % 4 === 2 || step % 8 === 7) {
         const drum = this.ctx.createOscillator();
         const dGain = this.ctx.createGain();
-        drum.type = 'sine';
+        drum.type = "sine";
         drum.frequency.setValueAtTime(65, now);
         drum.frequency.exponentialRampToValueAtTime(32, now + 0.18);
         dGain.gain.setValueAtTime(0.35, now);
@@ -376,7 +389,7 @@ class ProceduralAudioEngine {
       if (step % 4 === 2) {
         const snare = this.ctx.createOscillator();
         const sGain = this.ctx.createGain();
-        snare.type = 'triangle';
+        snare.type = "triangle";
         snare.frequency.setValueAtTime(280, now);
         snare.frequency.linearRampToValueAtTime(450, now + 0.08);
         sGain.gain.setValueAtTime(0.12, now);
@@ -391,7 +404,7 @@ class ProceduralAudioEngine {
       if (step % 8 === 0) {
         const bass = this.ctx.createOscillator();
         const bGain = this.ctx.createGain();
-        bass.type = 'sawtooth';
+        bass.type = "sawtooth";
         bass.frequency.setValueAtTime(90, now);
         bass.frequency.linearRampToValueAtTime(70, now + 0.85);
         bGain.gain.setValueAtTime(0.0, now);
