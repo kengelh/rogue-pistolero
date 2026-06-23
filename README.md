@@ -2,7 +2,7 @@
 
 *Dust on your boots, iron on your hip, and a bounty to collect.*
 
-**Frontier Tactics** is a hardcore, turn-based tactical RPG and merchant simulator set in an unforgiving, procedurally generated Wild West. The law is scarce, but outlaws, scorpions, and rival posses are everywhere. Do you have the grit to survive, build a posse, and earn your fortune under the blazing Arizona sun?
+**Rogue Pistolero** is a hardcore, turn-based tactical RPG and merchant simulator set in an unforgiving, procedurally generated Wild West. The law is scarce, but outlaws, scorpions, and rival posses are everywhere. Do you have the grit to survive, build a posse, and earn your fortune under the blazing Arizona sun?
 
 ### ✨ Version 0.9 Beta - The Merchant's Trail Update!
 The frontier has expanded! We're thrilled to introduce a full **dynamic economy and carriage trading system**. Buy low in struggling boomtowns, transport cargo across treacherous bandit-infested roads, and sell high in wealthy settlements to amass your fortune.
@@ -28,8 +28,8 @@ Ready to strap on your holster? Installing the game locally is quick and straigh
 
 **1. Clone the repository:**
 ```bash
-git clone https://github.com/yourusername/frontier-tactics.git
-cd frontier-tactics
+git clone https://github.com/yourusername/rogue-pistolero.git
+cd rogue-pistolero
 ```
 
 **2. Install dependencies:**
@@ -44,7 +44,7 @@ Launch the local development server:
 npm run dev
 ```
 
-**4. Enter the Frontier:**
+**4. These boots are made for walking:**
 Open your browser and navigate to `http://localhost:3000` (or the port specified in terminal) to start playing.
 
 ## 🚀 Deployment
