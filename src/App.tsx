@@ -3295,7 +3295,7 @@ export default function App() {
                   // setIsMuted(false);
                   // FrontierAudio.playMusic("world");
                 }}
-                className="w-full sm:w-auto bg-[#3d2d21] hover:bg-[#4d3a2b] text-[#8c6b0c] py-3 px-8 rounded-sm border-b-4 border-[#1a130f] uppercase tracking-[0.2em] font-bold text-xs transition-colors cursor-pointer"
+                className="w-full sm:w-auto bg-[#3d2d21] hover:bg-[#4d3a2b] text-amber-200 py-3 px-8 rounded-sm border-b-4 border-[#1a130f] uppercase tracking-[0.2em] font-bold text-xs transition-colors cursor-pointer"
               >
                 Enter Town
               </button>
@@ -3427,7 +3427,7 @@ export default function App() {
                             className={`py-2 px-3 rounded font-bold uppercase text-[9px] tracking-wider cursor-pointer ${
                               isCombat
                                 ? "bg-red-700 hover:bg-red-600 border border-red-600 text-stone-100"
-                                : "bg-[#3d2d21] hover:bg-[#2d2119] border border-[#1a130f] text-[#8c6b0c]"
+                                : "bg-[#3d2d21] hover:bg-[#2d2119] border border-[#1a130f] text-amber-200"
                             }`}
                           >
                             {isCombat

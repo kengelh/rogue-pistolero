@@ -75,9 +75,9 @@ interface CombatViewProps {
 const getItemWeight = (item: { id: string; name: string; type: string }) => {
   if (item.id === "whiskey") return 1.0;
   if (item.id === "elixir") return 1.0;
-  if (item.id === "ammo_pistol") return 1.0;
-  if (item.id === "ammo_rifle") return 2.0;
-  if (item.id === "ammo_shotgun") return 2.0;
+  if (item.id === "ammo_pistol") return 0.1;
+  if (item.id === "ammo_rifle") return 0.15;
+  if (item.id === "ammo_shotgun") return 0.2;
   if (item.id === "ammo_box") return 3.0; // fallback
   if (item.id === "bandage") return 0.5;
   if (item.id === "gunpowder") return 1.5;
@@ -5770,7 +5770,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
               ) : (
                 <button
                   onClick={handleTransitionToTactical}
-                  className="py-3 px-6 text-xs font-serif font-black uppercase tracking-widest bg-[#c4451a] hover:bg-[#a63412] border-2 border-[#e8b923]/40 text-[#8c6b0c] rounded cursor-pointer shadow-[0_0_15px_rgba(196,69,26,0.5)] w-full transition-all hover:scale-[1.02]"
+                  className="py-3 px-6 text-xs font-serif font-black uppercase tracking-widest bg-[#c4451a] hover:bg-[#a63412] border-2 border-[#e8b923]/40 text-white rounded cursor-pointer shadow-[0_0_15px_rgba(196,69,26,0.5)] w-full transition-all hover:scale-[1.02]"
                 >
                   🔌 Seek Cover (Tactical Phase)
                 </button>
@@ -6610,12 +6610,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 className={`col-span-1 py-2.5 px-3 rounded-sm font-bold font-serif uppercase tracking-wider text-[10px] transition-all flex items-center justify-center gap-1.5 focus:outline-none border-b-2 disabled:opacity-30 cursor-pointer ${
                   playerClip === 0
                     ? "bg-[#c4451a] text-white border-red-950 animate-pulse hover:bg-red-800"
-                    : "bg-[#dfd4bd] text-[#8c6b0c] hover:bg-[#3d2d21] border-black"
+                    : "bg-[#dfd4bd] text-[#3d2d21] hover:bg-[#3d2d21] hover:text-white border-black"
                 }`}
               >
                 <RefreshCw
                   size={12}
-                  className={playerClip === 0 ? "text-white" : "text-[#8c6b0c]"}
+                  className={playerClip === 0 ? "text-white" : "text-[#3d2d21] group-hover:text-white"}
                 />
                 <span>
                   Reload (
@@ -6645,7 +6645,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
               disabled={
                 playerHp <= 0 || turn !== "player" || ap < 1 || isAimingCannon
               }
-              className="col-span-2 py-2 px-3 rounded-sm font-bold font-serif uppercase tracking-wider text-[9.5px] bg-[#dfd4bd] hover:bg-[#c6ba9f] text-amber-500 border border-amber-900 border-b-2 disabled:opacity-35 cursor-pointer flex items-center justify-center gap-1.5"
+              className="col-span-2 py-2 px-3 rounded-sm font-bold font-serif uppercase tracking-wider text-[9.5px] bg-[#dfd4bd] hover:bg-[#c6ba9f] text-amber-950 border border-amber-900 border-b-2 disabled:opacity-35 cursor-pointer flex items-center justify-center gap-1.5"
             >
               📢 DEMAND SURRENDER (1 AP)
             </button>

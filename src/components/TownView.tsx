@@ -2506,7 +2506,7 @@ export const TownView: React.FC<TownViewProps> = ({
                       onClick={() =>
                         onStartCombat("bounty", 0.8, null, "sheriff_garrett")
                       }
-                      className="w-full py-2 bg-[#301010] hover:bg-red-950 border border-red-950 text-[#2d2119] font-bold text-[10px] font-mono uppercase tracking-widest rounded transition-colors"
+                      className="w-full py-2 bg-[#301010] hover:bg-red-950 border border-red-950 text-red-400 font-bold text-[10px] font-mono uppercase tracking-widest rounded transition-colors"
                     >
                       ⚔️ Provoke Sheriff to a Duel
                     </button>
@@ -2667,7 +2667,7 @@ export const TownView: React.FC<TownViewProps> = ({
                               "loot",
                             );
                           }}
-                          className={`px-3 py-1.5 rounded-sm font-bold uppercase text-[10px] tracking-widest transition-colors flex items-center gap-1.5 flex-shrink-0 ${player.gold >= 150 ? "bg-[#3d2d21] text-[#8c6b0c] hover:bg-[#2d2119] border border-[#8a705a]" : "bg-[#dcd1b9]/40 text-[#664d36] border border-[#bfae96] cursor-not-allowed opacity-50"}`}
+                          className={`px-3 py-1.5 rounded-sm font-bold uppercase text-[10px] tracking-widest transition-colors flex items-center gap-1.5 flex-shrink-0 ${player.gold >= 150 ? "bg-[#3d2d21] text-amber-200 hover:bg-[#2d2119] border border-[#8a705a]" : "bg-[#dcd1b9]/40 text-[#664d36] border border-[#bfae96] cursor-not-allowed opacity-50"}`}
                         >
                           $150 Treat
                         </button>
@@ -2719,7 +2719,7 @@ export const TownView: React.FC<TownViewProps> = ({
                                       "loot",
                                     );
                                   }}
-                                  className={`px-3 py-1.5 rounded-sm font-bold uppercase text-[10px] tracking-widest transition-colors flex items-center gap-1.5 flex-shrink-0 ${player.gold >= 300 ? "bg-[#3d2d21] text-[#8c6b0c] hover:bg-[#2d2119] border border-[#8a705a]" : "bg-[#dcd1b9]/40 text-[#664d36] border border-[#bfae96] cursor-not-allowed opacity-50"}`}
+                                  className={`px-3 py-1.5 rounded-sm font-bold uppercase text-[10px] tracking-widest transition-colors flex items-center gap-1.5 flex-shrink-0 ${player.gold >= 300 ? "bg-[#3d2d21] text-amber-200 hover:bg-[#2d2119] border border-[#8a705a]" : "bg-[#dcd1b9]/40 text-[#664d36] border border-[#bfae96] cursor-not-allowed opacity-50"}`}
                                 >
                                   $300 Buy
                                 </button>
@@ -2854,7 +2854,7 @@ export const TownView: React.FC<TownViewProps> = ({
                                   parseInt(tradeInputQty) <= 0 ||
                                   isNaN(parseInt(tradeInputQty))))
                             }
-                            className="bg-[#3d2d21] text-[#8c6b0c] hover:bg-[#2d2119] px-4 py-1 rounded font-bold uppercase text-xs tracking-wider transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-[#1a130f]"
+                            className="bg-[#3d2d21] text-amber-200 hover:bg-[#2d2119] px-4 py-1 rounded font-bold uppercase text-xs tracking-wider transition-colors disabled:opacity-50 disabled:cursor-not-allowed border border-[#1a130f]"
                           >
                             Confirm
                           </button>
@@ -2891,7 +2891,7 @@ export const TownView: React.FC<TownViewProps> = ({
                               setTradeInputQty(maxCanBuy.toString());
                               handleTrade(maxCanBuy.toString());
                             }}
-                            className="flex-1 py-1.5 px-2 border border-[#1a130f] bg-[#3d2d21] hover:bg-[#2d2119] text-[#8c6b0c] rounded font-bold text-[10px] uppercase shadow-sm"
+                            className="flex-1 py-1.5 px-2 border border-[#1a130f] bg-[#3d2d21] hover:bg-[#2d2119] text-amber-200 rounded font-bold text-[10px] uppercase shadow-sm"
                             title="Buy all your gold and space allows"
                           >
                             Max ({maxCanBuy})
@@ -2903,7 +2903,7 @@ export const TownView: React.FC<TownViewProps> = ({
                               setTradeInputQty(maxCanSell.toString());
                               handleTrade(maxCanSell.toString());
                             }}
-                            className="flex-1 py-1.5 px-2 border border-[#1a130f] bg-[#3d2d21] hover:bg-[#2d2119] text-[#8c6b0c] rounded font-bold text-[10px] uppercase shadow-sm"
+                            className="flex-1 py-1.5 px-2 border border-[#1a130f] bg-[#3d2d21] hover:bg-[#2d2119] text-amber-200 rounded font-bold text-[10px] uppercase shadow-sm"
                           >
                             All ({maxCanSell})
                           </button>

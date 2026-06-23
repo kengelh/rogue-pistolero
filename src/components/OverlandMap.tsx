@@ -1297,25 +1297,6 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
             <div className="absolute inset-0 pointer-events-none z-30 animate-pulse shadow-[inset_0_0_50px_rgba(220,38,38,0.55)] border-2 border-red-600/60" />
           )}
 
-          {/* Critical Warnings Banner on Top of Overland Map */}
-          {player.hydration <= 0 && (
-            <div className="absolute top-4 left-4 right-16 bg-[#2d0202]/95 border border-[#dc2626]/70 p-2.5 rounded-sm shadow-xl z-50 animate-bounce max-w-sm">
-              <div className="flex items-start gap-2">
-                <span className="text-sm">🚨</span>
-                <div className="space-y-0.5">
-                  <span className="text-[9px] font-serif uppercase tracking-widest font-black text-red-100 block">
-                    CRITICAL DEHYDRATION SUN-STROKE
-                  </span>
-                  <p className="text-[8px] font-mono text-red-300 leading-normal">
-                    You have run completely out of water. Movement speed is
-                    halved, and Combat AP is reduced by 50%! Secure Fresh Water
-                    at a River Valley immediately.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Day/Night Time Filter Overlay */}
           {(() => {
             let darknessOpacity = 0;
@@ -1838,14 +1819,14 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
 
           {/* Real-time ${player.name} coordinate sprite on the Overland Map (always centered under camera viewport) */}
           <div
-            className="absolute transform -translate-x-1/2 -translate-y-full z-40 transition-all duration-300 flex items-center justify-center pointer-events-none"
+            className="absolute transform -translate-x-1/2 -translate-y-full z-40 flex items-center justify-center pointer-events-none"
             style={{ left: `50%`, top: `50%` }}
           >
             <div className="relative flex justify-center items-center">
               <img
                 src={overlandImg}
                 alt="Player sprite"
-                className={`object-contain filter drop-shadow-[0_0_8px_rgba(232,185,35,0.8)] ${player.hasHorse ? "h-16" : "h-10"}`}
+                className={`object-contain filter drop-shadow-[0_0_8px_rgba(232,185,35,0.8)] ${player.hasHorse ? "w-16 h-16" : "w-10 h-10"}`}
                 style={{ imageRendering: "pixelated" }}
               />
               {player.hydration <= 0 && !showCampFire && (
@@ -2396,7 +2377,7 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
                               disabled={!canAffordTrain}
                               className={`w-full py-2.5 rounded-sm font-serif uppercase tracking-[0.14em] font-bold text-xs transition-colors border-0 flex items-center justify-center ${
                                 canAffordTrain
-                                  ? "bg-[#1e3a8a] hover:bg-indigo-900 text-[#8c6b0c] border-b-4 border-[#0c0908] cursor-pointer"
+                                  ? "bg-[#1e3a8a] hover:bg-indigo-900 text-amber-100 border-b-4 border-[#0c0908] cursor-pointer"
                                   : "bg-[#e8dec7] text-[#664d36] cursor-not-allowed opacity-40"
                               }`}
                             >
@@ -2418,7 +2399,7 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
                                   selectedLocation?.risk || 0.6,
                                 );
                               }}
-                              className="w-full mt-2 py-2.5 rounded-sm font-serif uppercase tracking-[0.14em] font-bold text-xs transition-colors border-0 flex items-center justify-center bg-[#4a1313] hover:bg-[#5c1a1a] text-[#8c6b0c] border-b-4 border-[#1a0808] cursor-pointer"
+                              className="w-full mt-2 py-2.5 rounded-sm font-serif uppercase tracking-[0.14em] font-bold text-xs transition-colors border-0 flex items-center justify-center bg-[#4a1313] hover:bg-[#5c1a1a] text-amber-200 border-b-4 border-[#1a0808] cursor-pointer"
                             >
                               Stick up Railway Express
                             </button>

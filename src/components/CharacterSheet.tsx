@@ -41,9 +41,9 @@ export function getItemWeight(item: {
 }): number {
   if (item.id === "whiskey") return 1.0;
   if (item.id === "elixir") return 1.0;
-  if (item.id === "ammo_pistol") return 1.0;
-  if (item.id === "ammo_rifle") return 2.0;
-  if (item.id === "ammo_shotgun") return 2.0;
+  if (item.id === "ammo_pistol") return 0.1;
+  if (item.id === "ammo_rifle") return 0.15;
+  if (item.id === "ammo_shotgun") return 0.2;
   if (item.id === "ammo_box") return 3.0; // fallback
   if (item.id === "bandage") return 0.5;
   if (item.id === "gunpowder") return 1.5;
