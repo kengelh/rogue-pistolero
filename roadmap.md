@@ -1,114 +1,124 @@
-# Western RPG Development Roadmap
+# 🌵 Frontier RPG: Dynamic Quest Interaction & Skill Check System (Roadmap)
 
-This document outlines the priority roadmap for new features, expanding heavily into interlocking mechanisms, crafting, and dynamic quests to improve replayability and depth. It serves as a detailed context and architectural guide for LLM development to program advanced, interlocking gameplay mechanisms.
+This roadmap outlines a proposed system to enhance active quests with interactive, skill-gated options. Instead of hardcoded binary choices, quests can dynamically roll from a pool of contextual interaction slots based on player attributes, location, and quest type.
 
-Features are sorted by Priority and Ease of Implementation.
+---
 
-## 1. Balanced Loot Tiering & Economy (Status: Complete)
-**Priority: High | Complexity: Low**
-- **Mechanic**: Restructure the combat loot drop logic to heavily restrict high-tier/legendary drops.
-- **Interlocking Value**: Ensures the early game (e.g., Tutorial Pete) only drops basic consumables or rusted, low-tier parts. Legendary or pristine weapon parts are *strictly* reserved for high-risk bounties or Nemesis encounters.
-- **Implementation**: 
-  - Add an enemy tier/difficulty check in the `onVictory` loot calculation.
-  - Tutorial encounters hardcoded to only drop basic `scrap_metal`, `bandage`, or nothing.
+## ⚙️ 1. Core Mechanics & Random Slotting
 
-## 2. Dynamic Faction Retaliation & Ambush Hooks (Status: Complete)
-**Priority: High | Complexity: Medium**
-- **Mechanic**: Earning positive reputation with Lawmen greatly diminishes Outlaw reputation. Outlaw gangs will dynamically ambush you on the Overland Map based on how infamous you are to them.
-- **Interlocking Value**: Connects the Bounty/Quest system directly to Overland Travel. Taking bounties makes travel more dangerous but more rewarding if you survive the ambushes.
-- **Implementation**: 
-  - `setTravelStatus` event hooks have been updated to factor in `factionReputation.outlaws` when rolling for ambushes in `OverlandMap.tsx`.
-  - Tie specific high-tier loot drops to these retaliatory ambushes (Implied through difficulty scaling).
+To keep encounters unpredictable and highly replayable, we propose a **Dynamic Quest Option Generator**:
+* **Pool Categorization**: Options are grouped by tags (e.g., `#urban`, `#wilderness`, `#combat`, `#investigation`, `#stealth`).
+* **Slotting Engine**: When an accepted quest is activated in town or on the trail:
+  1. It reserves **Slot 1** for the **Standard Resolution** (e.g., immediate combat or completion).
+  2. It randomly picks **Slot 2** and **Slot 3** from matching category pools.
+* **Skill Scaling**: Success rates scale dynamically with player stats (e.g., `base_chance + (player.attribute * 5%)`).
 
-## 3. Modular Gun Architecture & Scavenging (Status: Complete)
-*Replacing Universal "Scrap Metal" Repairs*
-**Priority: Medium-High | Complexity: Medium**
-- **Mechanic**: Weapon architecture contains specific component slots (`barrel`, `cylinder`, `stock`, `action`). Looting enemies provides specific rusted/used/pristine gun component items appropriate to their weapon type.
-- **Interlocking Value**: Pushes players to hunt specific enemy types (e.g., tracking down riflemen if the player needs a new rifle lever). 
-- **Implementation**:
-  - Enemies drop specific components (e.g. `Rusted Revolver Barrel`) based on their combat tier instead of universal scrap.
-  - Parts provide explicit perks (`accuracyBonus`, `maxClipBonus`) and have their own condition value that gets averaged into the player's sidearm condition.
-  - *Known Issue/Refinement:* Base `scrap_metal` is still lingering as a primitive repair option for simplicity, which may undercut the new scavenging loop if not balanced perfectly. Consider deprecating `scrap_metal` entirely in a future pass.
+---
 
-## 4. Gun Bench UI & Swapping Mechanism (Status: Complete)
-**Priority: Medium | Complexity: High**
-- **Mechanic**: A "Gun Maintenance" menu in the Character Sheet to manually detach and attach harvested weapon parts.
-- **Interlocking Value**: Makes scavenging exciting. Swapping low-condition parts with pristine components restores the weapon's condition natively and attaches powerful perks.
-- **Implementation**:
-  - Built `WeaponBenchModal.tsx` for component slot management.
-  - Integrated with `App.tsx` state to handle equipping/detaching and resolving stat bonuses (accuracy, clip size, damage).
-  - High-tier hubs (`boomtown`, `railway_hub`) dynamically generate pristine components in the shop.
+## 🎯 2. The 50 Generic Dynamic Interaction Options
 
-## 5. Saloon Rumors, Hidden Bounties & Ephemeral Stashes (Status: Complete)
-*(Interlocking: Gold, Overland Map, & Scavenging)*
-**Priority: Medium | Complexity: Medium**
-- **Concept:** Spending gold in town should yield tangible exploration benefits, reducing blind wandering on the Overland map. Instead of immediately knowing where legendary bounties are, you must buy "Rumors" at Saloons or find encrypted "Notes" on standard bandits.
-- **Mechanic**: 
-  - **The Rumor Mill:** Drinking/talking at the Saloon opens a Rumors option. For a gold fee, the player can unlock clues for their active bounties.
-  - **Hidden Bounties:** Some targets require Gathering Clues at "Disturbed Campfires" plotted on the Overland Map based on the rumors bought. Finding enough clues triggers boss showdowns or narrative twists.
-  - **Ephemeral Stashes:** The rumor mill might also reveal temporary POIs (e.g., "Abandoned Bandit Cache") that spawn on the map but only exist for a limited `worldTime` window (48 hours). 
-- **Implementation Details**:
-  - `map_note` added to `InventoryItem` types for clue storage.
-  - Added `spawnEphemeralLocation` logic in `App.tsx` and expiration cleanup dynamically via `hoursSurvived`.
-  - Stash raid mechanics in `TownView` allowing players to loot gold and parts at a risk of an ambush.
+Below is a master catalog of 50 generic interaction options, complete with situational contexts, required skills, success thresholds, and balanced narrative outcomes.
 
-> **Known Issue/Refinement:** The legacy `scrap_metal` logic still exists on the character sheet for simple condition repair. This slightly clashes with the precision component wear system and either needs to be deprecated or rebalanced.
+### 💬 Category A: Charisma & Silver Tongue (Persuasion, Intimidation, Deception)
 
-## 6. Posse Traits, Logistics, Loyalty & Ideology (Status: Pending)
-*(Interlocking: Mercenaries, Combat, Survival & Narrative Choices)*
-**Priority: Low | Complexity: High**
-- **Concept:** Posse members are living entities with moral compasses, requiring upkeep over time, not just passive combat bots. They provide map/travel skills (e.g., Scout reveals adjacent hexes, Scavenger increases loot drop rates by 15%).
-- **Mechanic**: 
-  - **Ideology Alignment:** Every posse companion aligns with a faction or ideology (e.g., "Lawful", "Renegade", "Mercenary").
-  - **Dynamic Loyalty:** Making narrative choices (e.g., capturing vs. killing bounties, running from fights, hitting max Outlaw rep) shifts individual posse `loyalty`. 
-  - **Combat & Upkeep Impact:** 
-    - *High Loyalty:* Stat buffs, willingness to take cover, or even auto-heal the player.
-    - *Low Loyalty:* They demand higher passive gold upkeep (bribes). If unpaid or deeply ideologically opposed, they might desert during camp or flee mid-combat.
-- **Interlocking Value**: Ties the followers system into the survival and economy mechanics. More guns = more mouths to feed, causing players to continuously hunt bounties or scavenge to maintain their crew.
-- **Implementation Guidelines**: 
-  - Update `PosseMember` in `types.ts` with `trait`, `ideology: string`, `loyalty: number`, and `dailyUpkeep: number`. 
-  - Add daily deductions to the `worldTime` loop in `OverlandMap` and apply trait modifiers globally.
-  - Hook loyalty modifiers into narrative quest resolutions, alignment gains, and `worldTime` tracking (for daily pay deductions).
+| ID | Generic Option | Universal Situation | Required Skill | Threshold | Success Outcome | Failure Consequence |
+|----|----------------|---------------------|----------------|-----------|-----------------|---------------------|
+| 1 | **Charm a Sentry** | Confronting a lone guard at any entrance. | Charisma | Medium (60%) | Guard lets you pass peacefully; gain Surprise advantage. | Guard sounds the alarm; combat starts with enemy firing first. |
+| 2 | **Bluff with Authority** | Confronting skittish outlaws or nervous guards. | Deception | Hard (75%) | Targets surrender immediately, offering gold as a bribe. | They recognize the bluff and draw weapons; lost initiative. |
+| 3 | **Buy Information** | Seeking leads on a hiding target in any town/settlement. | Charisma | Easy (45%) | Target's exact coordinate is revealed on the map. | You get conned; lose $15 gold and gain zero leads. |
+| 4 | **Bribe with Counterfeit Goods**| Meeting a corrupt or greedy guard, scout, or trader. | Sleight of Hand | Medium (65%) | Target lets you bypass a locked gate or gives key. | Caught red-handed; local reputation drops by 10. |
+| 5 | **Intimidate with Raw Brawn** | Facing a weak target surrounded by several lackeys. | Strength / Grit | Hard (70%) | Minor lackeys flee the scene, leaving target isolated. | The entire gang gets agitated, fighting with boosted damage. |
+| 6 | **Demand a Cut of the Booty** | Intercepting a thief or scavenger before they escape. | Charisma | Hard (80%) | Secure 50% of the stash peacefully; quest completes. | Target gets defensive and fires; player starts combat at -10 HP. |
+| 7 | **Spin a Sympathy Story** | Caught trespassing in restricted areas. | Empathy / Charisma | Easy (50%) | Occupants apologize, offering directions or healing items. | Occupants attack immediately, calling reinforcements. |
+| 8 | **De-escalate Hostility** | Cornered by hostile forces with civilians nearby. | Charisma | Hard (85%) | Hostages are freed safely; massive reputation and honor boost. | Fight starts instantly; quest reward is halved. |
+| 9 | **Blackmail with Secret Intel** | Forcing an uncooperative official or local leader. | Insight | Medium (60%) | Target hands over key codes or extra funding. | Target calls guards; player gets fined or branded an outlaw. |
+| 10 | **Stir Up a Crowd Distraction** | Trying to sneak into a heavily guarded building. | Charisma | Medium (65%) | Sentry leaves post to investigate; path cleared. | Caught inciting a riot; lose 1 turn or get jailed. |
 
-## 7. Town Prosperity & Faction Warfare (Status: Complete)
-*(Interlocking: Reputation, Shops, Missions, & Overland Map)*
-**Priority: Low | Complexity: High**
-- **Concept:** Towns are not static hubs; they are dynamic ecosystems affected by the player's actions and faction influence.
-- **Mechanic**: 
-  - **Prosperity Level:** Towns possess a `prosperity` stat (e.g., 0-100%). High prosperity attracts better merchants, premium gunsmithing parts, and rare horses. Low prosperity means barren shops and desperate, low-paying quests.
-  - **Faction Control:** Towns can swing between "Law-Abiding" and "Outlaw Controlled" based on player actions. Completing official bounties increases Lawmen control and prosperity. Failing to stop local outlaw missions or aiding bandits drops prosperity and shifts control to Outlaws.
-- **Interlocking Value**: Connects reputation to the economy. Prosperous/Lawful towns have better high-end items, while Outlaw-controlled towns offer contraband at erratic prices.
-- **Implementation Steps**: 
-  - **Step 1: Extend Types (Completed)** - Expand `Location` in `types.ts` with `prosperity: number` and `controllingFaction: 'lawmen' | 'outlaws' | 'neutral'`.
-  - **Step 2: Generate Initial Stats (Completed)** - Update `procedural.ts` to assign base prosperity and faction values during world generation.
-  - **Step 3: Dynamic Shop Generation (Completed)** - Update shop generators to filter items and scale prices dynamically based on these metrics. (Contraband dynamite/lockpicks exist in outlaw towns).
-  - **Step 4: Town UI Integration (Completed)** - Update `TownView.tsx` to display the town's prosperity and use `controllingFaction`.
-  - **Step 5: Dynamic State Shifts (Completed)** - Hooked into the combat victory and quest resolution pipelines to mutate location stats over time (claiming bounties increases prosperity, successfully robbing drains it and shifts it to Outlaw).
+---
 
-## 8. Weapon Calibers & Ammo Scarcity (Status: Pending)
-*(Interlocking: Firearms & Inventory)*
-**Priority: Medium | Complexity: Medium**
-- **Concept:** Replace the generic `ammo` pool with specific calibers to encourage weapon swapping, resource management, and tactical planning.
-- **Mechanic**: 
-  - **Caliber Types:** Introduce specific ammo types as distinct inventory items: `.45 Colt` (Revolvers), `.44-40 Winchester` (Rifles), `12 Gauge Shells` (Shotguns).
-  - **Scarcity Mechanics:** A town might be completely out of a certain ammo type, forcing the player to buy a cheap alternate weapon to survive the next bounty hunt. Enemies drop ammo corresponding *only* to the weapon they wield.
-- **Interlocking Value**: Deepens the inventory and economic mechanics. High-tier weapons are balanced by ammo scarcity; forces adaptation if specific ammo is unavailable in shops or drops without needing arbitrarily spongey enemies.
-- **Implementation Guidelines**: 
-  - Remove global `player.ammo`. 
-  - Expand `Weapon` type to require an `ammoType` or `caliber` property.
-  - Create standard `InventoryItem` subtypes for standard calibers.
-  - Update combat actions (`handleShoot`) to deduct specific items instead of a global pool.
+### 👣 Category B: Stealth, Infiltration & Sabotage
 
-## 9. Advanced Quest Typology & Investigation Mechanics (Status: Implementing)
-*(Interlocking: Storylines, Overland Map, Items & Non-Combat Resolution)*
-**Priority: High | Complexity: High**
-- **Concept:** Ensure that not all rumors and story quests escalate to a tactical shootout immediately. Quests generated under types like `story_investigation`, `myth` and `diplomacy` must involve multi-step paths involving exploration, dialogue, and puzzle/item collection.
-- **Mechanic**:
-  - **Multi-Step Paths:** A rumor (like "Lost Dutchman's Map") spawns a Clue token (e.g. Encrypted Map) rather than an outlaw hideout.
-  - **Non-Combat Prompts:** Reaching a quest objective on the Overland map may bring up an Investigation Dialog (e.g., Talk to a survivor, Search a wreck, Pay a Bribe) rather than an instant `onStartCombat` call.
-  - **Sequential Logic:** Resolving the first step increments `questState` and points to a new target hex. Only the final stage might involve combat (e.g., fighting a guardian for the treasure) or could be entirely peaceful (e.g., paying off a loan shark).
-- **Interlocking Value**: Gives the game a true RPG feel. Makes rumors significantly differ from Bounties. It leverages the global `inventory` (requiring items to solve puzzles) and Posse skills (a Scout might auto-resolve an investigation step).
-- **Implementation Steps**:
-  - **Step 1: Differentiate Quest Endpoints (Completed)** - Prevent `story_investigation` and `scavenge` quests from triggering the "Target Sighted: Outlaw Hideout" combat prompt.
-  - **Step 2: Investigation Modal (Completed)** - Build `InvestigationModal` in `App.tsx` to handle passive resolutions, giving XP/Gold and completing the quest without a shootout.
-  - **Step 3: Multi-Stage Tracking** - Track `stage` inside the `Mission` state to handle sequential clue gathering across the Overland map.
+| ID | Generic Option | Universal Situation | Required Skill | Threshold | Success Outcome | Failure Consequence |
+|----|----------------|---------------------|----------------|-----------|-----------------|---------------------|
+| 11 | **Pickpocket Key Item** | Slipping past an oblivious guard or sleeping boss. | Stealth | Medium (60%) | Obtain keys or quest items without triggering combat. | Caught red-handed; target alerts camp, combat begins. |
+| 12 | **Sabotage Mounts / Vehicles** | Approaching an enemy camp with horses/carriages. | Agility | Medium (65%) | Enemies cannot flee or chase you; delay enemy arrivals. | Spooked animals alert camp; combat starts out in the open. |
+| 13 | **Taint the Camp Supplies** | Infiltrating an active camp during their resting hour. | Survival | Hard (75%) | Several minor combatants start combat asleep or weakened. | Spotted at the supply line; forced into a close shootout. |
+| 14 | **Infiltrate via Alternate Entry**| Entering any locked building or structure. | Agility | Easy (50%) | Bypasses front guards and traps entirely. | Caught in tight space; start combat with a penalty to defense. |
+| 15 | **Rig Environmental Hazard** | Finding explosive or hazardous barrels in the area. | Engineering | Hard (80%) | Trigger a massive trap dealing heavy area damage to targets. | Trap detonates prematurely; player takes massive blast damage. |
+| 16 | **Shadow an Associative Target** | Tracking a hard-to-find target in an urban area. | Stealth | Easy (55%) | Target is tracked directly back to their hideout. | Lose the trail; waste time and suffer increased dehydration. |
+| 17 | **Blend in with Disguise** | Entering a heavily guarded fortress, camp, or manor. | Deception | Medium (70%) | Walk straight to the objective without raising alarms. | Disguise falls off; instant shootout with zero initial cover. |
+| 18 | **Cut Communications** | Infiltrating a modern fort, depot, or post. | Agility | Easy (45%) | Targets are unable to call for reinforcements during combat. | Trigger electrical shock or alarm; enemies alert. |
+| 19 | **Infiltrate & Loot Private Quarters** | Entering an enemy leader's tent or study undetected. | Stealth | Medium (60%) | Find a chest of gold or maps to bonus stash. | Trigger a tripwire; take 15 shrapnel damage and sound alarm. |
+| 20 | **Smuggle Concealed Weapons** | Entering a safe-zone town or high-security building. | Deception | Hard (75%) | Retain full arsenal of primary weapons inside. | Primary weapons confiscated; forced to fight with fists or knife. |
+
+---
+
+### 👁️ Category C: Insight, Perception & Tracking
+
+| ID | Generic Option | Universal Situation | Required Skill | Threshold | Success Outcome | Failure Consequence |
+|----|----------------|---------------------|----------------|-----------|-----------------|---------------------|
+| 21 | **Scan for High-Ground Threats**| Approaching a tight canyon or narrow trail. | Perception | Medium (60%) | Avoid ambush entirely; reverse-ambush sniper targets. | Sniper fires first; player takes heavy damage on turn one. |
+| 22 | **Examine Broken Ground Trails** | Tracking a target through wilderness or forest biomes. | Survival | Easy (50%) | Shorten travel steps by 50%; catch target off guard. | Wander into a hunting trap; take damage and lose speed. |
+| 23 | **Identify Unlocked Entryway** | Looking for a way inside a secure warehouse or shop. | Perception | Easy (40%) | Slip inside unnoticed; gain 1 turn of complete surprise. | Squeaky frame alerts target; they flee or secure the entrance. |
+| 24 | **Decipher Coded Markers** | Hunting an elusive target who leaves hidden signs. | Insight | Medium (65%) | Uncover hidden supply caches and enemy patrol weakness. | Code is misread; walk straight into a hazard or toxic area. |
+| 25 | **Deduce Distance from Audio Echoes**| Hearing distant sounds or gunfire on the trail. | Perception | Easy (55%) | Arrive at the distress signal in time to save allies; double loot.| Miscalculate direction; arrive too late, finding ruined ruins. |
+| 26 | **Spot Structural Weak Point** | Confronting enemies inside a fragile/decaying building. | Insight | Hard (75%) | Collapse a beam or wall, defeating minor targets instantly. | Structure collapses on you; take heavy blunt damage. |
+| 27 | **Analyze Trail Tread Depth** | Deciding between multiple paths or tracks on the road. | Insight | Medium (60%) | Follow the track with the gold/supplies, avoiding empty decoys.| Follow dummy path; get ambushed by lookouts. |
+| 28 | **Detect Nervous Behavioral Tell**| Interrogating an uncooperative or lying suspect. | Empathy | Medium (65%) | Suspect breaks under pressure, giving up location of loot. | Accuse wrong person; lose local reputation and honor. |
+| 29 | **Read Wildlife Movements** | Searching for missing assets or lost persons in wasteland. | Survival | Easy (50%) | Locate targets quickly; gain high reputation boost. | Waste time following false trails; lose hydration. |
+| 30 | **Audit Records for Discrepancies**| Investigating suspect accounts or trade manifests. | Insight | Hard (80%) | Expose corruption; gain large bounty reward and merchant trust. | Exposed as meddling; thugs ambush you in next safe town. |
+
+---
+
+### 🤠 Category D: Marksman, Grit & Combat Ingenuity
+
+| ID | Generic Option | Universal Situation | Required Skill | Threshold | Success Outcome | Failure Consequence |
+|----|----------------|---------------------|----------------|-----------|-----------------|---------------------|
+| 31 | **Shoot Loose Overhead Hazard** | Shootout occurring inside any built structure. | Marksman | Hard (80%) | Environmental object falls, crushing and stunning targets. | Miss hazard; waste precious ammo and lose current cover. |
+| 32 | **Fire Loud Warning Shot** | Confronting a group of hostile but hesitant brawlers. | Marksman | Easy (40%) | Hostile crowd disperses; boss is left isolated and afraid. | Crowd gets enraged; you get swarmed, losing initiative. |
+| 33 | **Blast Thrown Explosive** | Target attempts to throw dynamite or a grenade. | Marksman | Hard (85%) | Explosive detonates in enemy's hand, wiping out squad. | Explosive lands on player's position; take double damage. |
+| 34 | **Shoot Off Locked Fastener** | Trying to escape a locked room, cage, or burning corral.| Marksman | Medium (60%) | Escape instantly without using lockpicks or keys. | Richochet shot grazes player; take minor self-damage. |
+| 35 | **Brace for Enemy Charge** | Massive charging beast or rush of melee attackers. | Grit | Medium (65%) | Hold ground and land heavy stopping shots; stop the rush. | Lose nerve and run; trampled or swarmed for massive damage. |
+| 36 | **Quick-Draw Disarm** | Standoff or duel with an outlaw boss. | Quick Draw | Hard (80%) | Shoot weapon from target's hand; capture them peacefully. | Target fires first; player starts shootout with low HP. |
+| 37 | **Channel Adrenaline Burst** | Surrounded by multiple targets at close range. | Grit | Medium (70%) | Ignore combat pain; weapon reload speed is doubled. | Crash from fatigue early; speed and evasion drop to zero. |
+| 38 | **Destroy Water/Fluid Barrier** | Fight taking place near high towers or water valves. | Marksman | Medium (60%) | Wash out enemy positions, destroying their armor/evasion. | Flood your own line of sight; accuracy is halved. |
+| 39 | **Attempt Ricochet Shot** | Target is fully hidden behind solid steel/stone cover. | Marksman | Hard (85%) | Bypass target's cover entirely, landing a critical hit. | Gun chamber jams; gun condition drops and waste turn. |
+| 40 | **Throw Sand / Dust** | Trapped in close-quarters grapple or tight melee. | Agility | Easy (50%) | Blind attacker for two turns, allowing free escape. | Miss target's eyes; attacker tightens hold, dealing damage. |
+
+---
+
+### 🌿 Category E: Survival, Medicine & Wilderness Wisdom
+
+| ID | Generic Option | Universal Situation | Required Skill | Threshold | Success Outcome | Failure Consequence |
+|----|----------------|---------------------|----------------|-----------|-----------------|---------------------|
+| 41 | **Apply Crude First Aid** | Encountering wounded travelers or injured informants. | Medicine | Easy (45%) | Target is saved, revealing shortcut and secret map locations.| Target passes away; lose honor and local trust. |
+| 42 | **Tame Wild Beast** | Encountering aggressive or unbroken wild mounts. | Survival | Medium (60%) | Beast is tamed; travel speed is increased by 50% for 1 day.| Beast kicks or bites player; take 15 physical damage. |
+| 43 | **Brew Emergency Medicine** | Poisoned by local flora, snakes, or dirty arrows. | Medicine | Easy (50%) | Neutralize poison fully; gain temporary immunity to poison.| Poison worsens; lose maximum HP until rest. |
+| 44 | **Harvest Nutritious Resources** | Wandering through wilderness or desert locations. | Survival | Easy (40%) | Safely gather food and clean fluids (+30 HP, +20 Hydration). | Trigger allergy or hazard; take damage and suffer blindness. |
+| 45 | **Locate Deep Safe Spring** | Running critically low on water in dry biomes. | Survival | Medium (55%) | Uncover hidden water vein; fully restore hydration levels. | Drink contaminated fluid; maximum HP is reduced temporarily. |
+| 46 | **Establish Decoy Campsite** | Camping overnight in highly hostile territory. | Survival | Medium (65%) | Bandit ambush attacks empty camp; player gains surprise turn. | Fire goes out of control, burning random inventory items. |
+| 47 | **Forage Pain-Relief Herbs** | Tracking a target while player is injured. | Survival | Easy (50%) | Gather natural poultices that heal 25 HP. | Mistake toxic herb for medicine; lose speed and stamina. |
+| 48 | **Navigate by Stars / Landmarks**| Traveling during dark hours or dense duststorms. | Navigation | Medium (60%) | Reach destination safely without using rations or water. | Lose direction; wander back to starting coordinates exhausted. |
+| 49 | **Apply Natural Sedative Smoke**| Sneaking up on an active, resting enemy campsite. | Medicine | Hard (75%) | Minor sentries fall asleep; bypass security without combat. | Wind shifts; player inhales smoke, falling asleep or confused. |
+| 50 | **Follow Blood / Scents in Storm**| Hunting a wounded target during severe storm weather. | Survival | Hard (70%) | Find target's hidden cave before tracks are fully washed out. | Lose trail entirely; target recovers full health. |
+
+---
+
+## 🛠️ 3. Proposed Engineering Implementation
+
+To implement this without breaking the existing framework, we can introduce a lightweight schema in `src/types.ts`:
+
+```typescript
+export interface QuestOption {
+  id: string;
+  name: string;
+  skill: "charisma" | "stealth" | "perception" | "marksman" | "survival";
+  threshold: number; // e.g. 60
+  successText: string;
+  failureText: string;
+  onSuccess: (player: Player) => Partial<Player>;
+  onFailure: (player: Player) => Partial<Player>;
+}
+```
+
+This structure integrates cleanly into our new automatic town popup triggers, providing rich, non-linear ways to survive the deadly but comically unpredictable frontier!

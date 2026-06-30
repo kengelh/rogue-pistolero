@@ -46,6 +46,10 @@ export function generateLocationName(type: LocationType): string {
     const list = ['Fort Defiance', 'Fort Custer', 'Garrison Point', 'Outpost Liberty', 'Camp Bravo'];
     return list[Math.floor(Math.random() * list.length)];
   }
+  if (type === 'native_settlement') {
+    const list = ['Tall Pines Village', 'Red Earth Settlement', 'Whispering River Camp', 'Running Water Village', 'Eagle Valley Camp'];
+    return list[Math.floor(Math.random() * list.length)];
+  }
   
   const pref = TOWN_PREFIXES[Math.floor(Math.random() * TOWN_PREFIXES.length)];
   const suff = TOWN_SUFFIXES[Math.floor(Math.random() * TOWN_SUFFIXES.length)];
@@ -79,6 +83,7 @@ export function getBaseProsperityAndFaction(type: LocationType): { prosperity: n
     case 'ranch':
       return { prosperity: Math.floor(40 + Math.random() * 30), controllingFaction: 'neutral' };
     case 'desert_oasis':
+    case 'native_settlement':
       return { prosperity: Math.floor(40 + Math.random() * 30), controllingFaction: 'tribes' };
     case 'mine':
       return { prosperity: Math.floor(50 + Math.random() * 30), controllingFaction: 'neutral' };
@@ -170,7 +175,7 @@ export function generateShop(type: LocationType, risk: number, prosperity: numbe
       let dmgMod = 0;
       let rangeMod = 0;
       let clipMod = 0;
-      let costMult = 1.0;
+      let costMult = 2.5; // Gold Sink baseline
       
       // Prosperity effects masterwork chance
       const masterWorkChance = prosperity / 100 * 0.3; // Up to 30% chance for masterwork at 100 prosperity
@@ -180,13 +185,13 @@ export function generateShop(type: LocationType, risk: number, prosperity: numbe
         dmgMod = 12;
         rangeMod = 1;
         clipMod = 1;
-        costMult = 2.5;
+        costMult = 6.0; // Extreme Gold Sink for masterwork
       } else if (modifierRoll < 0.25 || prosperity < 30) { // low prosperity guarantees rusty
         modName = "Rusty ";
         dmgMod = -8;
         rangeMod = 0;
         clipMod = 0;
-        costMult = 0.5;
+        costMult = 1.0; // Rusty is normal baseline
       }
       
       const finalName = `${modName}${w.name}`;
@@ -233,7 +238,8 @@ import { instantiateStorylineQuest } from './storylines';
 export function generateMissionsForLocation(originId: string, locations: Location[]): Mission[] {
   const missions: Mission[] = [];
   const targetPool = locations.filter(loc => loc.id !== originId);
-  if (targetPool.length === 0) return [];
+  const originLoc = locations.find(loc => loc.id === originId);
+  if (targetPool.length === 0 || !originLoc) return [];
 
   // Story Starters: randomly roll to add a storyline starter here
   if (Math.random() < 0.25) {
@@ -241,19 +247,95 @@ export function generateMissionsForLocation(originId: string, locations: Locatio
     if (storyQuest) missions.push(storyQuest);
   }
 
+  // Cavalry Fort Quests
+  if (originLoc.type === 'cavalry_fort') {
+    const deserterTargetLoc = targetPool[Math.floor(Math.random() * targetPool.length)];
+    const deserter = generateOutlawName();
+    missions.push({
+      id: `mission_deserter_${Math.random().toString(36).substr(2, 5)}`,
+      title: `Retrieve Deserter: Private ${deserter}`,
+      type: 'bounty',
+      targetName: deserter,
+      targetLevel: Math.floor(2 + Math.random() * 4),
+      rewardGold: 150,
+      rewardXp: 120,
+      reputationChange: 20,
+      danger: 'medium',
+      description: `The Fort Commander requires you to track down Private ${deserter}, who deserted his post. Last seen near ${deserterTargetLoc.name}.`,
+      originLocationId: originId,
+      targetLocationId: deserterTargetLoc.id
+    });
+    
+    const escortTargetLoc = targetPool.find(l => l.type === 'boomtown' || l.type === 'railway_hub' || l.type === 'mine') || targetPool[0];
+    missions.push({
+      id: `mission_supply_${Math.random().toString(36).substr(2, 5)}`,
+      title: `Military Supply Run to ${escortTargetLoc.name}`,
+      type: 'escort',
+      targetName: 'Supply Marauders',
+      rewardGold: 220,
+      rewardXp: 150,
+      reputationChange: 15,
+      danger: 'high',
+      description: `Escort a military supply wagon loaded with munitions to ${escortTargetLoc.name}. Hostiles are likely to ambush.`,
+      originLocationId: originId,
+      targetLocationId: escortTargetLoc.id
+    });
+  }
+
+  // Native Settlement Quests
+  if (originLoc.type === 'native_settlement') {
+    const sacredLoc = targetPool.find(l => l.type === 'ghost_town' || l.type === 'hostile_camp' || l.type === 'mine') || targetPool[0];
+    missions.push({
+      id: `mission_scavenge_native_${Math.random().toString(36).substr(2, 5)}`,
+      title: `Reclaim Stolen Heirlooms from ${sacredLoc.name}`,
+      type: 'scavenge',
+      targetName: 'Tomb Robbers',
+      rewardGold: 100,
+      rewardXp: 200,
+      reputationChange: 30, // Big Tribes rep
+      danger: 'high',
+      description: `Sacred heirlooms were taken by grave robbers who fled to ${sacredLoc.name}. Return them to the village elders.`,
+      originLocationId: originId,
+      targetLocationId: sacredLoc.id
+    });
+    
+    const diplomaticTargetLoc = targetPool.find(l => l.type === 'boomtown' || l.type === 'cavalry_fort') || targetPool[0];
+    missions.push({
+      id: `mission_diplo_native_${Math.random().toString(36).substr(2, 5)}`,
+      title: `Deliver Treaty Terms to ${diplomaticTargetLoc.name}`,
+      type: 'diplomacy',
+      targetName: 'Town Officials',
+      rewardGold: 150,
+      rewardXp: 150,
+      reputationChange: 25,
+      danger: 'low',
+      description: `The elders wish to establish trade and peace. Deliver their treaty terms safely to the leadership in ${diplomaticTargetLoc.name}.`,
+      originLocationId: originId,
+      targetLocationId: diplomaticTargetLoc.id,
+      stage: 1,
+      maxStages: 1,
+      stageTargets: [diplomaticTargetLoc.id],
+      stageInstructions: [`Ride to ${diplomaticTargetLoc.name} and speak with the leadership.`]
+    });
+  }
+
   // Bounty Hunt Mission
   const bountyTargetLoc = targetPool[Math.floor(Math.random() * targetPool.length)];
-  const outlaw = generateOutlawName();
+  const outlaw = bountyTargetLoc.leaderName && Math.random() > 0.5 ? bountyTargetLoc.leaderName : generateOutlawName();
+  const targetLevel = Math.max(1, Math.round(1 + bountyTargetLoc.risk * 16 + Math.random() * 4));
+  const calculatedBountyReward = Math.round(targetLevel * 10 + Math.pow(targetLevel, 1.5) * 1.5 + 10);
+
   missions.push({
     id: `mission_bounty_${Math.random().toString(36).substr(2, 5)}`,
-    title: `Bounty Hunt: ${outlaw}`,
+    title: `Bounty Hunt: ${outlaw} (Lvl ${targetLevel})`,
     type: 'bounty',
     targetName: outlaw,
-    rewardGold: Math.round(150 + Math.random() * 150 + bountyTargetLoc.risk * 250),
-    rewardXp: Math.round(60 + bountyTargetLoc.risk * 100),
+    targetLevel: targetLevel,
+    rewardGold: calculatedBountyReward,
+    rewardXp: Math.round(50 + targetLevel * 10),
     reputationChange: 15,
-    danger: bountyTargetLoc.risk < 0.3 ? 'low' : bountyTargetLoc.risk < 0.6 ? 'medium' : bountyTargetLoc.risk < 0.85 ? 'high' : 'deadly',
-    description: `The Sheriff is offering a reward for bringing in ${outlaw} dead or alive. Last spotted hiding out in the vicinity of ${bountyTargetLoc.name}.`,
+    danger: targetLevel < 5 ? 'low' : targetLevel < 12 ? 'medium' : targetLevel < 18 ? 'high' : 'deadly',
+    description: `The Sheriff is offering a reward for bringing in ${outlaw} (Level ${targetLevel}) dead or alive. Last spotted hiding out in the vicinity of ${bountyTargetLoc.name}.`,
     originLocationId: originId,
     targetLocationId: bountyTargetLoc.id
   });
@@ -322,6 +404,63 @@ export function generateMissionsForLocation(originId: string, locations: Locatio
     targetLocationId: sacredLoc.id
   });
 
+  // Myth Quest (Procedural Multi-Stage Investigation)
+  const townsPool = targetPool.filter(l => l.type === 'boomtown' || l.type === 'railway_hub');
+  const wildernessPool = targetPool.filter(l => l.type === 'desert_oasis' || l.type === 'ghost_town' || l.type === 'outlaw_haven' || l.type === 'hostile_camp');
+
+  const m1 = townsPool[0] || targetPool[0];
+  const m2 = townsPool[1] || targetPool[Math.min(1, targetPool.length - 1)];
+  const m3 = wildernessPool[0] || targetPool[Math.min(2, targetPool.length - 1)];
+
+  missions.push({
+    id: `mission_myth_${Math.random().toString(36).substr(2, 5)}`,
+    title: "The Myth of the Dutchman's Gold",
+    type: "myth",
+    targetName: "Lost Dutchman's Mine",
+    rewardGold: 500,
+    rewardXp: 300,
+    reputationChange: 15,
+    danger: "medium",
+    description: "Search for the legendary Lost Dutchman's Gold. Gather maps from archives, decode symbols with local scholars, and excavate the hidden cave.",
+    originLocationId: originId,
+    targetLocationId: m1.id,
+    stage: 1,
+    maxStages: 3,
+    stageTargets: [m1.id, m2.id, m3.id],
+    stageInstructions: [
+      `Search town archives in ${m1.name} to locate early cartography drawings of the Superstition Range.`,
+      `Decode ancient map markings with a well-traveled scholar or barkeep in ${m2.name}.`,
+      `Locate and unseal the hidden gold cave coordinates at ${m3.name}.`
+    ]
+  });
+
+  // Diplomacy Quest (Procedural Multi-Stage Mediation)
+  const d1 = wildernessPool[1] || targetPool[Math.min(3, targetPool.length - 1)];
+  const d2 = townsPool[2] || targetPool[Math.min(4, targetPool.length - 1)];
+  const d3 = townsPool[3] || targetPool[Math.min(5, targetPool.length - 1)];
+
+  missions.push({
+    id: `mission_diplo_${Math.random().toString(36).substr(2, 5)}`,
+    title: "Treaty of the Painted Canyon",
+    type: "diplomacy",
+    targetName: "Chief Red Cloud",
+    rewardGold: 400,
+    rewardXp: 250,
+    reputationChange: 35,
+    danger: "low",
+    description: "Tensions are rising between the railway expansionists and Apache clans. Mediate a peace treaty to avoid bloodshed across the territory.",
+    originLocationId: originId,
+    targetLocationId: d1.id,
+    stage: 1,
+    maxStages: 3,
+    stageTargets: [d1.id, d2.id, d3.id],
+    stageInstructions: [
+      `Deliver fresh supplies and goodwill gestures to Chief Red Cloud's delegation at ${d1.name}.`,
+      `Negotiate boundary deeds with the land bureau and local sheriff in ${d2.name}.`,
+      `Ferry the formal agreements back to the commissioners in ${d3.name} to seal the peace.`
+    ]
+  });
+
   return missions;
 }
 
@@ -338,7 +477,7 @@ export function generateWorldMap(): Location[] {
     'ghost_town',    // 6
     'ghost_town',    // 7
     'desert_oasis',  // 8
-    'desert_oasis',  // 9
+    'native_settlement', // 9
     'hostile_camp',  // 10
     'hostile_camp',  // 11
     'mine',          // 12
@@ -365,7 +504,7 @@ export function generateWorldMap(): Location[] {
       // Enforce minimum coordinate separation helper
       for (const pos of positions) {
         const dist = Math.hypot(pos.x - x, pos.y - y);
-        if (dist < 12) { // Adjusted separation slightly so 16 points fit cleanly
+        if (dist < 18) { // Increased separation so locations are further apart initially
           valid = false;
           break;
         }
@@ -436,6 +575,12 @@ export function generateWorldMap(): Location[] {
         bankGold = Math.round(1500 + Math.random() * 500);
         bankGuards = 6;
         break;
+      case 'native_settlement':
+        risk = 0.2 + Math.random() * 0.3;
+        description = 'A tribal settlement respecting the old ways. Friendly if you respect their traditions.';
+        bankGold = 0;
+        bankGuards = 0;
+        break;
     }
 
     const { prosperity, controllingFaction } = getBaseProsperityAndFaction(type);
@@ -443,6 +588,18 @@ export function generateWorldMap(): Location[] {
     
     // Generate economy profile seeded by location coordinates so it's deterministic but varies by location
     const economyProfile = generateEconomyProfile((x + 1) * (y + 1));
+    
+    let leaderName: string | undefined = undefined;
+    if (type === 'outlaw_haven' || type === 'hostile_camp') {
+      leaderName = generateOutlawName();
+    } else if (type === 'cavalry_fort') {
+      leaderName = `Captain ${generateOutlawName().split(' ')[1] || 'Smith'}`;
+    } else if (type === 'native_settlement') {
+      const nativeNames = ["Red Cloud", "Sitting Bull", "Crazy Horse", "Geronimo", "Chief Joseph", "Cochise", "Quanah Parker", "Black Kettle", "Roman Nose", "Little Wolf"];
+      leaderName = nativeNames[Math.floor(Math.random() * nativeNames.length)];
+    } else if (type === 'boomtown' || type === 'railway_hub' || type === 'ranch') {
+      leaderName = `Sheriff ${generateOutlawName().split(' ')[1] || 'Jones'}`;
+    }
 
     locations.push({
       id: locId,
@@ -460,6 +617,7 @@ export function generateWorldMap(): Location[] {
       prosperity,
       economyProfile,
       controllingFaction,
+      leaderName,
       isExplored: idx === 0 // Start with only the default starting town revealed (hidden map)
     });
   });
@@ -501,11 +659,28 @@ export function generateChunkLocations(cx: number, cy: number): Location[] {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 
-  const types: LocationType[] = ['boomtown', 'mine', 'outlaw_haven', 'desert_oasis', 'hostile_camp', 'ghost_town'];
+  const types: LocationType[] = [
+    'boomtown', 'boomtown', 
+    'mine', 'mine', 
+    'outlaw_haven', 'outlaw_haven', 
+    'desert_oasis', 'desert_oasis', 
+    'hostile_camp', 'hostile_camp', 
+    'ghost_town', 'ghost_town',
+    'native_settlement', 'native_settlement', 
+    'cavalry_fort'
+  ];
   const locations: Location[] = [];
   
-  // Create 2 or 3 locations per chunk
-  const numLocations = 2 + Math.floor(rng() * 2); 
+  const distFromCenter = Math.hypot(cx, cy);
+  
+  let numLocations = 0;
+  if (rng() > Math.min(0.85, 0.2 + distFromCenter * 0.15)) {
+    // Fewer locations the further out we go, reducing town spam
+    numLocations = 1 + Math.floor(rng() * 2); 
+  } else if (rng() > 0.85) {
+    // 15% chance to cluster a few towns far out to give a sense of realism
+    numLocations = 3;
+  }
   
   for (let i = 0; i < numLocations; i++) {
     const type = types[Math.floor(rng() * types.length)];
@@ -540,9 +715,33 @@ export function generateChunkLocations(cx: number, cy: number): Location[] {
       description = 'A natural hot spring badlands oasis. Water is completely free at the center well.';
       bankGold = 0;
       bankGuards = 0;
+    } else if (type === 'cavalry_fort') {
+      risk = 0.1;
+      description = 'A heavily fortified standing army outpost enforcing frontier law. Safe, heavily armed, and imposing.';
+      bankGold = Math.round(1500 + rng() * 500);
+      bankGuards = 6;
+      hasTrain = false;
+    } else if (type === 'native_settlement') {
+      risk = 0.2 + rng() * 0.3;
+      description = 'A tribal settlement respecting the old ways. Friendly if you respect their traditions.';
+      bankGold = 0;
+      bankGuards = 0;
+      hasTrain = false;
     }
 
     const { prosperity, controllingFaction } = getBaseProsperityAndFaction(type);
+    
+    let leaderName: string | undefined = undefined;
+    if (type === 'outlaw_haven' || type === 'hostile_camp') {
+      leaderName = generateOutlawName();
+    } else if (type === 'cavalry_fort') {
+      leaderName = `Captain ${generateOutlawName().split(' ')[1] || 'Smith'}`;
+    } else if (type === 'native_settlement') {
+      const nativeNames = ["Red Cloud", "Sitting Bull", "Crazy Horse", "Geronimo", "Chief Joseph", "Cochise", "Quanah Parker", "Black Kettle", "Roman Nose", "Little Wolf"];
+      leaderName = nativeNames[Math.floor(rng() * nativeNames.length)];
+    } else if (type === 'boomtown' || type === 'railway_hub' || type === 'ranch') {
+      leaderName = `Sheriff ${generateOutlawName().split(' ')[1] || 'Jones'}`;
+    }
 
     const loc: Location = {
       id,
@@ -559,6 +758,7 @@ export function generateChunkLocations(cx: number, cy: number): Location[] {
       bankGuards,
       prosperity,
       controllingFaction,
+      leaderName,
       isExplored: false
     };
 

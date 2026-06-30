@@ -18,6 +18,7 @@ import {
   InventoryItem,
   Nemesis,
   InjurySystem,
+  OverlandActor,
 } from "./types";
 
 const getEffectiveMaxHp = (playerObj: Player) => {
@@ -34,8 +35,10 @@ const getEffectiveMaxHp = (playerObj: Player) => {
 };
 import { generateWorldMap } from "./utils/procedural";
 import { instantiateStorylineQuest } from "./utils/storylines";
-import { TRADE_GOODS } from "./utils/trade";
-import { CharacterSheet } from "./components/CharacterSheet";
+import { TRADE_GOODS, generateMarketBulletin } from "./utils/trade";
+import { generateOverlandActors, tickOverlandActors } from "./utils/overlandActors";
+import { CharacterModal } from "./components/CharacterModal";
+import { InventoryModal } from "./components/InventoryModal";
 import { OverlandMap } from "./components/OverlandMap";
 import { TownView } from "./components/TownView";
 import { CombatView } from "./components/CombatView";
@@ -67,8 +70,15 @@ import {
   Database,
   Save,
   Download,
+  User,
+  Package,
 } from "lucide-react";
 import { FrontierAudio } from "./utils/AudioSynth";
+import {
+  StandoffOption,
+  getSkillMetrics,
+  generateInteractiveStandoffOptions
+} from "./utils/standoffOptions";
 
 const safeLocalStorage = {
   getItem: (key: string): string | null => {
@@ -99,12 +109,13 @@ export default function App() {
   >(null);
 
   const [worldLocations, setWorldLocations] = useState<Location[]>([]);
+  const [overlandActors, setOverlandActors] = useState<OverlandActor[]>([]);
   const [currentLocationId, setCurrentLocationId] = useState<string>("");
   const [player, setPlayer] = useState<Player>({
     gender: "male",
     avatarImage: hero1Img,
-    hp: 35,
-    maxHp: 35,
+    hp: 50,
+    maxHp: 50,
     hydration: 100,
     maxHydration: 100,
     gold: 25,
@@ -118,6 +129,25 @@ export default function App() {
     campMovementLvl: 0,
     pistolSkill: 0,
     rifleSkill: 0,
+    reloadSkill: 0,
+    horsemanship: 0,
+    silenceSkill: 0,
+    scoutingSkill: 0,
+    scoutingMastery: 0,
+    barterSkill: 0,
+    medicineSkill: 0,
+    pistolSkillLevel: 0,
+    rifleSkillLevel: 0,
+    reloadSkillLevel: 0,
+    horsemanshipLevel: 0,
+    silenceSkillLevel: 0,
+    barterSkillLevel: 0,
+    logisticsSkillLevel: 0,
+    appraisalSkillLevel: 0,
+    salvageSkillLevel: 0,
+    gunsmithSkillLevel: 0,
+    medicineSkillLevel: 0,
+    skillPoints: 1,
     weapon: {
       name: "Rusty Colt Revolver",
       dmg: 12,
@@ -157,6 +187,7 @@ export default function App() {
     name: "The Stranger",
     horseName: "Kentucky Stallion",
     posse: [],
+    difficulty: "normal",
     stats: {
       duelsWon: 0,
       bountiesCollected: 0,
@@ -198,12 +229,23 @@ export default function App() {
 
   const [showWeaponBenchModal, setShowWeaponBenchModal] = useState(false);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
+  const [showCharacterModal, setShowCharacterModal] = useState(false);
+  const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [confrontationModal, setConfrontationModal] = useState<Mission | null>(
     null,
   );
   const [investigationModal, setInvestigationModal] = useState<Mission | null>(
     null,
   );
+  const [lastPromptedLocationId, setLastPromptedLocationId] = useState<string | null>(
+    null,
+  );
+  const [investigationOutcome, setInvestigationOutcome] = useState<{
+    text: string;
+    success: boolean;
+    rewardText?: string;
+    isFlavor?: boolean;
+  } | null>(null);
   const [logs, setLogs] = useState<LogMessage[]>([]);
 
   // Player manual badlands coordinates
@@ -258,6 +300,32 @@ export default function App() {
   useEffect(() => {
     FrontierAudio.setMute(isMuted);
   }, [isMuted]);
+
+  // Global keydown listeners for Character (C) and Inventory (I)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (activeView === "intro" || activeView === "gameover") return;
+      if (
+        ["INPUT", "TEXTAREA", "SELECT"].includes(
+          (e.target as HTMLElement).tagName,
+        )
+      ) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      if (key === "c") {
+        e.preventDefault();
+        setShowCharacterModal((prev) => !prev);
+      } else if (key === "i") {
+        e.preventDefault();
+        setShowInventoryModal((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [activeView]);
 
   useEffect(() => {
     if (activeView === "intro" || activeView === "map") {
@@ -326,6 +394,11 @@ export default function App() {
   const [activeProvokedNpcId, setActiveProvokedNpcId] = useState<string | null>(
     null,
   );
+  const [activeProvokedNpcName, setActiveProvokedNpcName] = useState<string | null>(
+    null,
+  );
+  const [activeStandoffBonus, setActiveStandoffBonus] = useState<any>(null);
+  const [activeStandoffPenalty, setActiveStandoffPenalty] = useState<any>(null);
   const [pendingCombat, setPendingCombat] = useState<{
     type:
       | "bounty"
@@ -338,8 +411,47 @@ export default function App() {
     risk: number;
     mission: Mission | null;
     provokedNpcId: string | null;
+    provokedNpcName?: string | null;
     previousView: "town" | "map";
+    options?: StandoffOption[];
+    selectedOptionResult?: {
+      success: boolean;
+      roll: number;
+      needed: number;
+      message: string;
+      resolvedText: string;
+      skillName: string;
+      masteryGained: number;
+      bypassCombat: boolean;
+    } | null;
   } | null>(null);
+
+  // Automatically seed options for pending standoff encounters
+  useEffect(() => {
+    if (pendingCombat && !pendingCombat.options) {
+      setPendingCombat((prev) => {
+        if (!prev || prev.options) return prev;
+        
+        // Retrieve setting context details
+        const info = getPreCombatDetails();
+        const numEnemies = info ? info.numEnemies : 1;
+        const isSlipperyPete =
+          prev.provokedNpcId === "slippery_pete" ||
+          prev.mission?.id === "tutorial_get_horse" ||
+          prev.mission?.targetName === "Slippery Pete";
+        const isNestClearing = prev.type === "nest_clearing";
+        const isBankRobbery = prev.type === "robbery";
+        const isSheriffDuel = prev.provokedNpcId === "sheriff_garrett";
+        const isBossDuel = prev.provokedNpcId === "bandit_boss";
+
+        return {
+          ...prev,
+          options: generateInteractiveStandoffOptions(isSlipperyPete, isNestClearing, numEnemies, isBankRobbery, isSheriffDuel, isBossDuel),
+          selectedOptionResult: null,
+        };
+      });
+    }
+  }, [pendingCombat]);
 
   const [preCombatView, setPreCombatView] = useState<"map" | "town">("town");
   const [victoryStoryDetails, setVictoryStoryDetails] = useState<{
@@ -402,7 +514,7 @@ export default function App() {
       const startingTown = freshMap[0];
       const tutorialMission: Mission = {
         id: "tutorial_get_horse",
-        title: "🐴 TUTORIAL: Capture Saloon Horse Thief",
+        title: "🐴 TUTORIAL: Capture Saloon Donkey Thief",
         type: "bounty",
         targetName: "Slippery Pete",
         rewardGold: 20,
@@ -410,12 +522,13 @@ export default function App() {
         reputationChange: 15,
         danger: "low",
         description:
-          "Slippery Pete has pocketed equine gold key tokens. Walk into the Saloon tab, accept Pete's bounty, click and secure his capture!",
+          "Slippery Pete got blindingly drunk in the Saloon and stumbled out riding the Mayor's prize-winning donkey, thinking it was a high-grade stallion. Confront him in the Saloon and bring him to justice!",
         originLocationId: startingTown.id,
         targetLocationId: startingTown.id,
       };
       startingTown.quests = [tutorialMission, ...startingTown.quests];
       setWorldLocations(freshMap);
+      setOverlandActors(generateOverlandActors(freshMap));
       setCurrentLocationId(startingTown.id);
       setPlayerX(startingTown.x);
       setPlayerY(startingTown.y);
@@ -427,7 +540,7 @@ export default function App() {
 
     // Initial logs with immediate step-by-step frontier instructions
     addLogMessage(
-      '🌵 FRONTIER ADVICE: Click "Saloon" below, accept the "TUTORIAL: Capture Saloon Horse Thief" contract, and then assault "Slippery Pete" in the tactical grid to seize your first bounty gold!',
+      '🌵 FRONTIER ADVICE: Click "Saloon" below, accept the "TUTORIAL: Capture Saloon Donkey Thief" contract, and then assault "Slippery Pete" in the tactical grid to seize your first bounty gold!',
       "system",
     );
   }, []);
@@ -492,6 +605,17 @@ export default function App() {
             daysSurvived: (updatedPlayer.stats?.daysSurvived || 0) + daysPassed,
             hoursSurvived: newHoursSurvived,
           };
+
+          // Generate new Overland Market Bulletin daily
+          if (daysPassed > 0) {
+            const nextBulletin = generateMarketBulletin(worldLocations);
+            if (nextBulletin) {
+              updatedPlayer.activeMarketBulletin = nextBulletin;
+              setTimeout(() => {
+                addLogMessage(nextBulletin.message, "loot");
+              }, 120);
+            }
+          }
 
           // Filter out expired locations
           setWorldLocations((prevLocs) => {
@@ -562,6 +686,21 @@ export default function App() {
     });
   };
 
+  const consumeInventoryItem = (itemId: string, count = 1) => {
+    setPlayer((prev) => {
+      const nextInv = prev.inventory
+        .map((i) => {
+          if (i.id === itemId) {
+            const nextCount = (i.count ?? 1) - count;
+            return { ...i, count: nextCount };
+          }
+          return i;
+        })
+        .filter((i) => (i.count ?? 1) > 0);
+      return { ...prev, inventory: nextInv };
+    });
+  };
+
   const addLogMessage = (text: string, type: LogMessage["type"]) => {
     const timestamp = new Date().toLocaleTimeString([], {
       hour: "2-digit",
@@ -613,7 +752,9 @@ export default function App() {
 
     if (method === "train") {
       let trainCost = Math.round(dist * 1.5);
-      if (player.perks.includes("silver_tongue")) {
+      if ((player.appraisalSkillLevel || 0) >= 3) {
+        trainCost = Math.round(trainCost * 0.5); // Golden Tongue: -50% ticket cost
+      } else if (player.perks.includes("silver_tongue")) {
         trainCost = Math.round(trainCost * 0.8);
       }
       if (player.gold < trainCost) {
@@ -731,6 +872,16 @@ export default function App() {
       desc =
         "Hostiles have crept into the light of your campfire! Defend yourself in close-quarters.";
       icon = "⛺";
+    } else if (pendingCombat.provokedNpcId === "sheriff_garrett") {
+      label = "⚖️ Duel with the Law";
+      sublabel = "Sheriff's Standoff";
+      desc = "You've crossed the line and challenged the district's Sheriff to a deadly duel in the middle of town. This won't end peacefully.";
+      icon = "⚖️";
+    } else if (pendingCombat.provokedNpcId === "bandit_boss") {
+      label = "🏴‍☠️ Duel with the Boss";
+      sublabel = "Bandit Boss Standoff";
+      desc = "You've challenged the infamous Bandit Boss in the middle of their own camp. Only one of you is walking away from this.";
+      icon = "🏴‍☠️";
     } else if (pendingCombat.type === "bounty") {
       label = `🎯 Bounty Confrontation: ${pendingCombat.mission?.targetName || "Outlaw"}`;
       sublabel = "Guaranteed Arrest Warrant";
@@ -1070,10 +1221,13 @@ export default function App() {
           });
           return;
         } else if (randEvent < 0.7) {
-          const foundGold = Math.floor(Math.random() * 8) + 3;
+          let foundGold = Math.floor(Math.random() * 8) + 3;
+          if ((player.appraisalSkillLevel || 0) >= 2) {
+            foundGold = Math.round(foundGold * 1.25);
+          }
           setPlayer((prev) => ({ ...prev, gold: prev.gold + foundGold }));
           addLogMessage(
-            `💰 SCAVENGED WAGON: ${player.name} searched a deserted mining wagon and found $${foundGold}!`,
+            `💰 SCAVENGED WAGON: ${player.name} searched a deserted mining wagon and found $${foundGold}!${(player.appraisalSkillLevel || 0) >= 2 ? " (Collector's Eye +25% Gold)" : ""}`,
             "loot",
           );
         } else if (randEvent < 0.85) {
@@ -1173,15 +1327,28 @@ export default function App() {
           });
         }
 
+        const tradeGuardsCount = player.posse ? player.posse.filter((m) => m.role === "Trade Guard").length : 0;
+        const guardAmbushReduction = tradeGuardsCount * 0.20;
+
         let totalAmbushChance =
           baseAmbushChance +
           bountyHunterChance +
           outlawRetaliationChance +
           cargoValueMod +
-          cargoWeightMod;
+          cargoWeightMod -
+          guardAmbushReduction;
 
-        // Cap ambush chance
-        totalAmbushChance = Math.min(0.85, totalAmbushChance);
+        // Ensure chance doesn't drop below 0
+        totalAmbushChance = Math.max(0, Math.min(0.85, totalAmbushChance));
+
+        if (tradeGuardsCount > 0) {
+          setTimeout(() => {
+            addLogMessage(
+              `🛡️ WAGON PROTECTION: Your ${tradeGuardsCount} Trade Guard${tradeGuardsCount > 1 ? "s are" : " is"} guarding the wagon, reducing road ambush chance by -${Math.round(guardAmbushReduction * 100)}%!`,
+              "system"
+            );
+          }, 100);
+        }
 
         if (Math.random() < totalAmbushChance) {
           const rollForType = Math.random() * totalAmbushChance;
@@ -1220,6 +1387,39 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, [travelStatus, worldLocations]);
+
+  // Auto-prompt active quests/rumors when entering a town with an active target
+  useEffect(() => {
+    if (activeView === "town" && currentLocationId) {
+      if (lastPromptedLocationId !== currentLocationId) {
+        setLastPromptedLocationId(currentLocationId);
+        
+        // Find the first active quest targeting this town
+        const matchingQuest = player.inventory
+          ?.map((item) => {
+            for (const loc of worldLocations) {
+              const m = loc.quests?.find((q) => q.id === item.id);
+              if (m) return m;
+            }
+            return null;
+          })
+          .find(
+            (m): m is Mission =>
+              m !== null &&
+              m.targetLocationId === currentLocationId &&
+              !m.hiddenTargetHex
+          );
+
+        if (matchingQuest) {
+          // Open the investigation modal automatically to prompt the player with a beautiful dialog!
+          setInvestigationModal(matchingQuest);
+        }
+      }
+    } else if (activeView !== "town") {
+      // Reset so if they leave and return, they get prompted again
+      setLastPromptedLocationId(null);
+    }
+  }, [activeView, currentLocationId, player.inventory, worldLocations, lastPromptedLocationId]);
 
   // Purchase items
   const handleBuyItem = (item: ShopItem) => {
@@ -1300,18 +1500,39 @@ export default function App() {
           ownedMounts,
         };
       } else if (item.id === "whiskey") {
-        nextHp = Math.min(getEffectiveMaxHp(prev), prev.hp + 25);
-        addLogMessage(`Downed glass of Rye Whiskey. Restored +25 HP.`, "loot");
+        let healAmt = 25;
+        let bonusText = "";
+        if ((prev.medicineSkillLevel || 0) >= 3) {
+          healAmt = 50;
+          bonusText = " (Miracle Remedy Bonus!)";
+        } else if ((prev.medicineSkillLevel || 0) >= 1) {
+          healAmt = 37;
+          bonusText = " (Poultice Preparation Bonus!)";
+        }
+        nextHp = Math.min(getEffectiveMaxHp(prev), prev.hp + healAmt);
+        addLogMessage(`Downed glass of Rye Whiskey. Restored +${healAmt} HP.${bonusText}`, "loot");
       } else if (item.id === "elixir") {
-        nextHp = Math.min(getEffectiveMaxHp(prev), prev.hp + 50);
+        let healAmt = 50;
+        let bonusText = "";
+        if ((prev.medicineSkillLevel || 0) >= 3) {
+          healAmt = 100;
+          bonusText = " (Miracle Remedy Bonus!)";
+        } else if ((prev.medicineSkillLevel || 0) >= 1) {
+          healAmt = 75;
+          bonusText = " (Poultice Preparation Bonus!)";
+        }
+        nextHp = Math.min(getEffectiveMaxHp(prev), prev.hp + healAmt);
         addLogMessage(
-          "Chugged Snake Oil Elixir. Purified wound cells (+50 HP).",
+          `Chugged Snake Oil Elixir. Purified wound cells (+${healAmt} HP).${bonusText}`,
           "loot",
         );
       } else if (
         item.id === "ammo_pistol" ||
         item.id === "ammo_rifle" ||
         item.id === "ammo_shotgun" ||
+        item.id === "ammo_45_colt" ||
+        item.id === "ammo_44_40_winchester" ||
+        item.id === "ammo_12_gauge" ||
         item.id === "canteen"
       ) {
         let ammoCount = 0;
@@ -1323,14 +1544,18 @@ export default function App() {
           details = "Hydration equivalent doses.";
         } else {
           ammoCount =
-            item.id === "ammo_pistol" ? 12 : item.id === "ammo_rifle" ? 10 : 8;
+            (item.id === "ammo_pistol" || item.id === "ammo_45_colt") ? 12 :
+            (item.id === "ammo_rifle" || item.id === "ammo_44_40_winchester") ? 10 : 8;
           const nameMap: Record<string, string> = {
             ammo_pistol: ".45 Colt (Pistol)",
+            ammo_45_colt: ".45 Colt (Revolver)",
             ammo_rifle: ".44-40 (Rifle)",
+            ammo_44_40_winchester: ".44-40 Winchester (Rifle)",
             ammo_shotgun: "12 Gauge (Shotgun)",
+            ammo_12_gauge: "12 Gauge Shells (Shotgun)",
           };
-          ammoName = nameMap[item.id];
-          details = `Ammunition for ${item.id.replace("ammo_", "")}s.`;
+          ammoName = nameMap[item.id] || item.name;
+          details = item.details || `Ammunition cartridges.`;
         }
 
         const exist = nextInventory.find((i) => i.id === item.id);
@@ -1594,11 +1819,14 @@ export default function App() {
       setPreCombatView("map");
       setActiveView("combat");
     } else {
-      const goldEarned = Math.floor(40 + Math.random() * 80);
+      let goldEarned = Math.floor(40 + Math.random() * 80);
+      if ((player.appraisalSkillLevel || 0) >= 2) {
+        goldEarned = Math.round(goldEarned * 1.25);
+      }
       setPlayer((p) => {
         return { ...p, gold: p.gold + goldEarned };
       });
-      addLogMessage(`💰 STASH RAIDED: You dug up $${goldEarned}!`, "loot");
+      addLogMessage(`💰 STASH RAIDED: You dug up $${goldEarned}!${(player.appraisalSkillLevel || 0) >= 2 ? " (Collector's Eye +25% Gold)" : ""}`, "loot");
     }
   };
 
@@ -1686,11 +1914,19 @@ export default function App() {
     capturedCount: number,
     finalInjuries: InjurySystem | undefined,
     lootItems: InventoryItem[],
+    overrideMission?: Mission | null,
+    overrideNpcId?: string | null,
   ) => {
+    setActiveStandoffBonus(null);
+    setActiveStandoffPenalty(null);
     addLogMessage(
       `🏆 VICTORY: Combat cleared. Scurried outlaws and gained $${lootGold} Gold and +${xpReward} XP.`,
       "loot",
     );
+
+    const npcIdToUse = overrideNpcId !== undefined ? overrideNpcId : activeProvokedNpcId;
+    const missionToUse = overrideMission !== undefined ? overrideMission : activeMissionTarget;
+
 
     let nextInventory = [...player.inventory];
     if (lootItems && lootItems.length > 0) {
@@ -1787,69 +2023,81 @@ export default function App() {
     let missionBonusXp = 0;
     let nextRep = player.reputation;
 
-    const isSlipperyPeteCaptured = activeProvokedNpcId === "slippery_pete";
+    const isSlipperyPeteCaptured = npcIdToUse === "slippery_pete";
 
     let nextNemeses = player.nemeses || [];
-    if (activeMissionTarget) {
+    if (missionToUse) {
       // Remove from nemesis list if they were targeted
       const defeatedNemesis = nextNemeses.find(
-        (n) => n.name === activeMissionTarget.targetName,
+        (n) => n.name === missionToUse.targetName,
       );
       if (defeatedNemesis) {
         nextNemeses = nextNemeses.filter(
-          (n) => n.name !== activeMissionTarget.targetName,
+          (n) => n.name !== missionToUse.targetName,
         );
         addLogMessage(
-          `💀 NEMESIS DEFEATED: The long rivalry with ${activeMissionTarget.targetName} has finally ended.`,
+          `💀 NEMESIS DEFEATED: The long rivalry with ${missionToUse.targetName} has finally ended.`,
           "loot",
         );
       }
 
       // Clean target note from our inventory bags
       nextInventory = nextInventory.filter(
-        (item) => item.id !== activeMissionTarget.id,
+        (item) => item.id !== missionToUse.id,
       );
 
       // Remove from active ledger
       setPlayer((p) => ({
         ...p,
         acceptedQuests: p.acceptedQuests?.filter(
-          (q) => q.id !== activeMissionTarget.id,
+          (q) => q.id !== missionToUse.id,
         ),
       }));
 
-      if (activeMissionTarget.type === "bounty") {
+      if (missionToUse.type === "bounty") {
         // Normal Bounties require bringing the captive back
+        let val = missionToUse.rewardGold;
+        let bonusText = "";
+        if ((player.appraisalSkillLevel || 0) >= 3) {
+          val = Math.round(val * 1.5);
+          bonusText = " (Golden Tongue Bonus!)";
+        }
         const capturedItem: InventoryItem = {
-          id: `captured_${activeMissionTarget.id}`,
-          name: `⛓️ Captured: ${activeMissionTarget.targetName}`,
+          id: `captured_${missionToUse.id}`,
+          name: `⛓️ Captured: ${missionToUse.targetName}`,
           type: "value" as const,
-          value: activeMissionTarget.rewardGold,
+          value: val,
           count: 1,
-          details: `Captured outlaw bound inside heavy trail handcuffs. Present this captive to any Town Sheriff Office / Custody Desk in any town district to collect the reward gold ($${activeMissionTarget.rewardGold})!`,
+          details: `Captured outlaw bound inside heavy trail handcuffs. Present this captive to any Town Sheriff Office / Custody Desk in any town district to collect the reward gold ($${val})${bonusText}!`,
         };
         nextInventory = [...nextInventory, capturedItem];
         addLogMessage(
-          `⛓️ OUTLAW BOUND: ${player.name} handcuffed ${activeMissionTarget.targetName}! Report back to any Town Sheriff to claim the reward coin.`,
+          `⛓️ OUTLAW BOUND: ${player.name} handcuffed ${missionToUse.targetName}! Report back to any Town Sheriff to claim the reward coin.`,
           "loot",
         );
       } else {
         // Other missions and story quests are immediately rewarded on survival/clear
-        missionBonusGold += activeMissionTarget.rewardGold;
-        missionBonusXp += activeMissionTarget.rewardXp;
+        let rewardedQuestGold = missionToUse.rewardGold;
+        let bonusText = "";
+        if ((player.appraisalSkillLevel || 0) >= 3) {
+          rewardedQuestGold = Math.round(rewardedQuestGold * 1.5);
+          bonusText = " (Golden Tongue +50% Gold!)";
+        }
+        missionBonusGold += rewardedQuestGold;
+        missionBonusXp += missionToUse.rewardXp;
         nextRep = Math.max(
           -100,
           Math.min(
             100,
-            player.reputation + activeMissionTarget.reputationChange,
+            player.reputation + missionToUse.reputationChange,
           ),
         );
         addLogMessage(
-          `📜 MISSION ACCOMPLISHED: ${activeMissionTarget.title}. Earned $${activeMissionTarget.rewardGold} and ${activeMissionTarget.rewardXp} XP!`,
+          `📜 MISSION ACCOMPLISHED: ${missionToUse.title}. Earned $${rewardedQuestGold}${bonusText} and ${missionToUse.rewardXp} XP!`,
           "loot",
         );
 
-        if (activeMissionTarget.type === "robbery" && currentLoc) {
+        if (missionToUse.type === "robbery" && currentLoc) {
           missionBonusGold += currentLoc.bankGold;
           addLogMessage(
             `💰 PLUS BANK VAULT CLEARED! Added ${currentLoc.bankGold} gold bullions from the vault into your pockets!`,
@@ -1876,9 +2124,9 @@ export default function App() {
         // Increase prosperity of mission origin town
         setWorldLocations((prev) =>
           prev.map((loc) => {
-            if (loc.id === activeMissionTarget.originLocationId) {
+            if (loc.id === missionToUse.originLocationId) {
               const increase =
-                activeMissionTarget.type === "robbery" ? -15 : 10;
+                missionToUse.type === "robbery" ? -15 : 10;
               const newProsperity = Math.max(
                 0,
                 Math.min(100, (loc.prosperity || 50) + increase),
@@ -1898,11 +2146,11 @@ export default function App() {
 
         // Spawn next storyline quest if needed
         if (
-          activeMissionTarget.isStoryline &&
-          activeMissionTarget.nextQuestTemplateId
+          missionToUse.isStoryline &&
+          missionToUse.nextQuestTemplateId
         ) {
           const nextQ = instantiateStorylineQuest(
-            activeMissionTarget.nextQuestTemplateId,
+            missionToUse.nextQuestTemplateId,
             worldLocations,
             currentLoc!.id,
           );
@@ -1927,7 +2175,7 @@ export default function App() {
       setWorldLocations((prev) =>
         prev.map((loc) => ({
           ...loc,
-          quests: loc.quests.filter((q) => q.id !== activeMissionTarget!.id),
+          quests: loc.quests.filter((q) => q.id !== missionToUse!.id),
         })),
       );
     } else if (isSlipperyPeteCaptured) {
@@ -2032,7 +2280,7 @@ export default function App() {
         nextXpToNext = Math.round(nextXpToNext * 2.1); // exponential scaling (Elite style)
 
         const staminaGain = Math.floor(Math.random() * 4) + 2;
-        newMaxHp = Math.min(75, prev.maxHp + staminaGain); // Ceiling of 75 HP max
+        newMaxHp = Math.min(100, prev.maxHp + staminaGain); // Ceiling of 100 HP max
         newHp = newHp + (newMaxHp - prev.maxHp);
 
         addLogMessage(
@@ -2062,7 +2310,13 @@ export default function App() {
         }, 500);
       }
 
-      const ammoItemId = `ammo_${prev.weapon.ammoType || "pistol"}`;
+      const ammoItemId = prev.ammoScarcity
+        ? (prev.weapon.ammoType === "rifle"
+            ? "ammo_44_40_winchester"
+            : prev.weapon.ammoType === "shotgun"
+              ? "ammo_12_gauge"
+              : "ammo_45_colt")
+        : `ammo_${prev.weapon.ammoType || "pistol"}`;
       const ammoTarget = nextInventory.find((i) => i.id === ammoItemId);
       if (ammoTarget) {
         ammoTarget.count = finalAmmo;
@@ -2071,9 +2325,16 @@ export default function App() {
         }
       } else if (finalAmmo > 0) {
         // Should rarely happen, but just in case
+        const defaultName = prev.ammoScarcity
+          ? (prev.weapon.ammoType === "rifle"
+              ? "Box of .44-40 Winchester (Rifle)"
+              : prev.weapon.ammoType === "shotgun"
+                ? "Box of 12 Gauge Shells (Shotgun)"
+                : "Box of .45 Colt (Revolver)")
+          : `Ammunition`;
         nextInventory.push({
           id: ammoItemId,
-          name: `Ammunition`,
+          name: defaultName,
           type: "consumable",
           value: 10,
           count: finalAmmo,
@@ -2086,7 +2347,7 @@ export default function App() {
           newInjuries,
           newInventory: updatedInv,
           logMsgs,
-        } = applyAutoBandaging(finalInjuries, nextInventory);
+        } = applyAutoBandaging(finalInjuries, nextInventory, prev.medicineSkillLevel);
         returnedInjuries = newInjuries;
         nextInventory = updatedInv;
 
@@ -2102,6 +2363,7 @@ export default function App() {
         gold: finalGold,
         xp: actualXp,
         level,
+        skillPoints: level > prev.level ? (prev.skillPoints || 0) + 1 : (prev.skillPoints || 0),
         xpToNextLevel: nextXpToNext,
         reputation: nextRep,
         inventory: nextInventory,
@@ -2140,6 +2402,8 @@ export default function App() {
   };
 
   const handleCombatDefeat = () => {
+    setActiveStandoffBonus(null);
+    setActiveStandoffPenalty(null);
     if (combatType === "ambush") {
       let msg = `⚠️ AMBUSHED & ROBBED! Thugs beat you down and stole all your $${player.gold} pocket gold! They left you in the dirt.`;
       if (player.tradeInventory && player.tradeInventory.length > 0) {
@@ -2189,6 +2453,7 @@ export default function App() {
     const saveData = {
       player,
       worldLocations,
+      overlandActors,
       currentLocationId,
       activeView,
       logs,
@@ -2213,6 +2478,7 @@ export default function App() {
         const data = JSON.parse(saveData);
         if (data.player) setPlayer(data.player);
         if (data.worldLocations) setWorldLocations(data.worldLocations);
+        if (data.overlandActors) setOverlandActors(data.overlandActors);
         if (data.currentLocationId)
           setCurrentLocationId(data.currentLocationId);
         if (data.activeView) setActiveView(data.activeView);
@@ -2249,8 +2515,8 @@ export default function App() {
     const bountyGold = originalMission
       ? originalMission.rewardGold
       : isSlipperyPete
-        ? 350
-        : 250;
+        ? 25
+        : 150;
     const xpReward = originalMission
       ? originalMission.rewardXp
       : isSlipperyPete
@@ -2305,7 +2571,11 @@ export default function App() {
 
     setPlayer((prev) => {
       const bhMult = prev.perks.includes("bounty_hunter") ? 1.2 : 1.0;
-      const finalBountyGold = Math.round(bountyGold * bhMult);
+      let appMult = 1.0;
+      if ((prev.appraisalSkillLevel || 0) >= 3) {
+        appMult = 1.5; // Golden Tongue: +50% bounty payouts!
+      }
+      const finalBountyGold = Math.round(bountyGold * bhMult * appMult);
 
       const nextInv = prev.inventory.filter((i) => i.id !== itemId);
       const totalXp = prev.xp + xpReward;
@@ -2320,7 +2590,7 @@ export default function App() {
         nextXpToNext = Math.round(nextXpToNext * 2.1); // exponential scaling
 
         const staminaGain = Math.floor(Math.random() * 4) + 2;
-        newMaxHp = Math.min(75, prev.maxHp + staminaGain); // Ceiling of 75 HP max
+        newMaxHp = Math.min(100, prev.maxHp + staminaGain); // Ceiling of 100 HP max
         addLogMessage(
           `⚡ LEVEL UP! ${player.name} reached level ${level}! Max HP +${newMaxHp - prev.maxHp}, +0.5 AP.${level >= 3 ? " A new Trait awaits in town!" : ""}`,
           "reputation",
@@ -2347,6 +2617,7 @@ export default function App() {
         maxHp: newMaxHp,
         xp: actualXp,
         level,
+        skillPoints: level > prev.level ? (prev.skillPoints || 0) + 1 : (prev.skillPoints || 0),
         xpToNextLevel: nextXpToNext,
         reputation: nextRep,
         factionReputation: {
@@ -2475,6 +2746,189 @@ export default function App() {
     }));
     addLogMessage(
       `🔫 WEAPON ENGRAVING: You have engraved custom details onto your sidearm, naming it: "${newName}"!`,
+      "loot",
+    );
+  };
+
+  const handleResolveStandoffOption = (option: StandoffOption) => {
+    if (!pendingCombat) return;
+
+    // 1. Cost verification
+    if (option.cost) {
+      if (option.cost.type === "gold" && (player.gold || 0) < option.cost.amount) {
+        addLogMessage("⚠️ INSUFFICIENT GOLD: You don't have enough gold for this option!", "danger");
+        return;
+      }
+    }
+
+    // 2. Metrics calculation
+    const metrics = getSkillMetrics(option.skill, player, option.baseChance);
+    const roll = Math.floor(Math.random() * 100) + 1; // 1 to 100
+    const success = roll <= metrics.totalChance;
+
+    // 3. Apply option outcomes
+    let resolution: any;
+    if (success) {
+      resolution = option.onSuccess(player);
+    } else {
+      resolution = option.onFailure(player);
+    }
+
+    const { playerUpdates, log, combatBonus, combatPenalty } = resolution;
+
+    // 4. Increase Skill Mastery Points! (Passive use increase!)
+    const skillMasteryUpdates: Partial<Player> = {};
+    let skillLabel = "";
+    let masteryGained = 4; // +4 mastery points per use!
+
+    switch (option.skill) {
+      case "charisma":
+        skillLabel = "Charisma & Persuasion";
+        skillMasteryUpdates.barterSkill = Math.min(100, (player.barterSkill || 0) + masteryGained);
+        break;
+      case "stealth":
+        skillLabel = "Stealth & Sabotage";
+        skillMasteryUpdates.silenceSkill = Math.min(100, (player.silenceSkill || 0) + masteryGained);
+        break;
+      case "perception":
+        skillLabel = "Perception & Scouting";
+        skillMasteryUpdates.scoutingMastery = Math.min(100, (player.scoutingMastery || 0) + masteryGained);
+        break;
+      case "marksman":
+        skillLabel = "Marksman & Grit";
+        // Boost both pistol and rifle skill masteries!
+        skillMasteryUpdates.pistolSkill = Math.min(200, (player.pistolSkill || 0) + masteryGained);
+        skillMasteryUpdates.rifleSkill = Math.min(200, (player.rifleSkill || 0) + masteryGained);
+        break;
+      case "survival":
+        skillLabel = "Survival & Medicine";
+        skillMasteryUpdates.medicineSkill = Math.min(100, (player.medicineSkill || 0) + masteryGained);
+        break;
+    }
+
+    // Apply player stats and skill updates
+    setPlayer((prev) => ({
+      ...prev,
+      ...playerUpdates,
+      ...skillMasteryUpdates,
+    }));
+
+    // Trigger logs
+    addLogMessage(log, success ? "loot" : "danger");
+    addLogMessage(`🌟 SKILL PROGRESS: Your ${skillLabel} mastery has increased from practice!`, "system");
+
+    // Save the resolution in pendingCombat state to display results
+    setPendingCombat((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        selectedOptionResult: {
+          success,
+          roll,
+          needed: metrics.totalChance,
+          message: success ? option.successText : option.failureText,
+          resolvedText: log,
+          skillName: skillLabel,
+          masteryGained,
+          bypassCombat: !!(success && combatBonus?.bypassCombat),
+        },
+      };
+    });
+
+    // Save bonuses/penalties to be used when entering CombatView
+    if (combatBonus) {
+      setActiveStandoffBonus(combatBonus);
+    }
+    if (combatPenalty) {
+      setActiveStandoffPenalty(combatPenalty);
+    }
+
+    // Automatically transition after showing the outcome briefly
+    setTimeout(() => {
+      setPendingCombat((currentPending) => {
+        if (!currentPending) return null;
+
+        const bypassCombat = !!(success && combatBonus?.bypassCombat);
+
+        if (bypassCombat) {
+          // Bypass combat completely and complete quest!
+          const prevView = currentPending.previousView;
+          const isBountyType = currentPending.type === "bounty" || (currentPending.mission && currentPending.mission.type === "bounty");
+          
+          const ammoType = `ammo_${player.weapon.ammoType || "pistol"}`;
+          const ammoItem = player.inventory.find((i) => i.id === ammoType);
+          const ammoCount = ammoItem ? ammoItem.count : 0;
+          
+          handleCombatVictory(
+            0,
+            0,
+            player.hp,
+            player.weapon.clip,
+            ammoCount,
+            (player.posse || []).map(member => member.id),
+            isBountyType ? 1 : 0,
+            player.injuries,
+            [],
+            currentPending.mission,
+            currentPending.provokedNpcId
+          );
+          
+          setActiveView(prevView);
+          return null; // clears pendingCombat
+        } else {
+          // Enter combat with active modifiers
+          setCombatType(currentPending.type);
+          setCombatRisk(currentPending.risk);
+          setActiveMissionTarget(currentPending.mission);
+          if (currentPending.provokedNpcId) {
+            setActiveProvokedNpcId(currentPending.provokedNpcId);
+          } else {
+            setActiveProvokedNpcId(null);
+          }
+          setPreCombatView(currentPending.previousView);
+          setActiveView("combat");
+          
+          addLogMessage(
+            `⚔️ ENGAGEMENT STARTED: Entered combat with active standoff modifiers!`,
+            "danger"
+          );
+          return null; // clears pendingCombat
+        }
+      });
+    }, 2500);
+  };
+
+  const handleUpgradeSkill = (skillKey: string) => {
+    setPlayer((p) => {
+      const currentPoints = p.skillPoints || 0;
+      if (currentPoints <= 0) return p;
+
+      const levelField = `${skillKey}Level`;
+      const currentLvl = (p as any)[levelField] || 0;
+      if (currentLvl >= 3) return p;
+
+      const updatedPlayer = {
+        ...p,
+        skillPoints: currentPoints - 1,
+        [levelField]: currentLvl + 1,
+      } as any;
+
+      // Special case for scoutingSkill which directly maps to its level field
+      if (skillKey === "scoutingSkill") {
+        updatedPlayer.scoutingSkill = currentLvl + 1;
+      }
+
+      // Level 2 Field Medicine: Survivalist's Constitution (+10 Max HP & HP)
+      if (skillKey === "medicineSkill" && currentLvl + 1 === 2) {
+        updatedPlayer.maxHp = (p.maxHp || 50) + 10;
+        updatedPlayer.hp = (p.hp || 50) + 10;
+      }
+
+      return updatedPlayer;
+    });
+    const cleanName = skillKey.replace("Skill", "").replace("Level", "");
+    addLogMessage(
+      `🌟 UPGRADED: Spent 1 Skill Point to upgrade your ${cleanName} skill level!`,
       "loot",
     );
   };
@@ -2689,6 +3143,25 @@ export default function App() {
     });
   };
 
+  const handleEquipMount = (mountIndex: number) => {
+    setPlayer((prev) => {
+      const owned = prev.ownedMounts || [];
+      const selected = owned[mountIndex];
+      if (!selected) return prev;
+
+      addLogMessage(
+        `🏇 SADDLE UP: You saddled up and mounted ${selected.name}!`,
+        "system"
+      );
+
+      return {
+        ...prev,
+        mount: selected,
+        horseName: selected.name,
+      };
+    });
+  };
+
   // permanent gun mods crafting
   const handleCraftUpgrade = (
     upgradeType: "barrel" | "clip" | "scope" | "rifling",
@@ -2806,14 +3279,15 @@ export default function App() {
   const handleRestart = () => {
     const freshMap = generateWorldMap();
     setWorldLocations(freshMap);
+    setOverlandActors(generateOverlandActors(freshMap));
     setCurrentLocationId(freshMap[0].id);
 
     setPlayer({
       gender: "male",
       avatarImage: hero1Img,
       name: "The Stranger",
-      hp: 35,
-      maxHp: 35,
+      hp: 50,
+      maxHp: 50,
       hydration: 100,
       maxHydration: 100,
       gold: 25,
@@ -2830,6 +3304,8 @@ export default function App() {
         maxClip: 6,
         clip: 6,
         value: 30,
+        condition: 100,
+        ammoType: "pistol",
       },
       factionReputation: {
         lawmen: 0,
@@ -2843,15 +3319,43 @@ export default function App() {
         accuracyBonus: 0,
         hasScope: false,
       },
-      inventory: [],
+      inventory: [
+        {
+          id: "ammo_pistol",
+          name: "Box of .45 Colt (Pistol)",
+          type: "consumable",
+          value: 10,
+          count: 36,
+          details: "Ammunition for pistols.",
+        },
+      ],
       tradeInventory: [],
       activeCarriage: null,
       hasHorse: false,
       posse: [],
+      difficulty: "normal",
+      ammoScarcity: false,
       pistolSkill: 0,
       rifleSkill: 0,
       reloadSkill: 0,
       horsemanship: 0,
+      silenceSkill: 0,
+      scoutingSkill: 0,
+      scoutingMastery: 0,
+      barterSkill: 0,
+      medicineSkill: 0,
+      pistolSkillLevel: 0,
+      rifleSkillLevel: 0,
+      reloadSkillLevel: 0,
+      horsemanshipLevel: 0,
+      silenceSkillLevel: 0,
+      barterSkillLevel: 0,
+      logisticsSkillLevel: 0,
+      appraisalSkillLevel: 0,
+      salvageSkillLevel: 0,
+      gunsmithSkillLevel: 0,
+      medicineSkillLevel: 0,
+      skillPoints: 1,
       campMovementLvl: 0,
       stats: {
         duelsWon: 0,
@@ -3054,6 +3558,30 @@ export default function App() {
               <HelpCircle size={12} className="text-[#8c6b0c]" />
               <span className="hidden sm:inline">Guide</span>
             </button>
+
+            {activeView !== "intro" && (
+              <>
+                <button
+                  id="header-btn-char"
+                  onClick={() => setShowCharacterModal(true)}
+                  className="p-1 px-2.5 rounded bg-[#3d2d21] text-[#e8b923] hover:text-white border border-[#8a705a] transition-all cursor-pointer flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider font-serif shadow-sm"
+                  title="View Character details & upgrade skills (C)"
+                >
+                  <User size={12} className="text-[#e8b923]" />
+                  <span>Character (C)</span>
+                </button>
+
+                <button
+                  id="header-btn-inv"
+                  onClick={() => setShowInventoryModal(true)}
+                  className="p-1 px-2.5 rounded bg-[#3d2d21] text-[#e8b923] hover:text-white border border-[#8a705a] transition-all cursor-pointer flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider font-serif shadow-sm"
+                  title="Open Saddlebags Inventory (I)"
+                >
+                  <Package size={12} className="text-[#e8b923]" />
+                  <span>Inventory (I)</span>
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -3214,6 +3742,60 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+
+                <div className="bg-[#e8dec7] border border-[#bfae96] p-4 rounded-sm text-center col-span-1 sm:col-span-1">
+                  <span className="font-bold text-[#8c6b0c] uppercase text-sm tracking-wider block font-serif mb-1">
+                    Difficulty Level
+                  </span>
+                  <p className="text-[10px] text-[#664d36] italic mb-3">
+                    Choose how tough the Badlands outlaws are
+                  </p>
+                  <div className="flex gap-4 justify-center">
+                    {[
+                      { id: "normal", label: "🤠 Normal", desc: "Forgiving trail. Outlaw levels stay closer to yours." },
+                      { id: "difficult", label: "💀 Difficult", desc: "Ruthless badlands. Tougher, higher-level enemies." }
+                    ].map((d) => (
+                      <button
+                        key={d.id}
+                        onClick={() => {
+                          setPlayer({ ...player, difficulty: d.id as "normal" | "difficult" });
+                        }}
+                        title={d.desc}
+                        className={`flex-1 px-4 py-2 border rounded-sm transition-all focus:outline-none ${player.difficulty === d.id ? "border-[#e8b923] text-[#1a130f] bg-[#e8b923] shadow-[0_0_15px_rgba(232,185,35,0.15)] font-bold" : "border-[#bfae96] text-[#664d36] bg-[#f4ead5] hover:bg-[#dcd1b9]"}`}
+                      >
+                        <span className="text-[10px] uppercase tracking-wider font-serif block">{d.label}</span>
+                        <span className="text-[8px] font-sans opacity-70 block mt-1 line-clamp-2 leading-tight">{d.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-[#e8dec7] border border-[#bfae96] p-4 rounded-sm text-center col-span-1 sm:col-span-1">
+                  <span className="font-bold text-[#8c6b0c] uppercase text-sm tracking-wider block font-serif mb-1">
+                    Ammunition & Calibers
+                  </span>
+                  <p className="text-[10px] text-[#664d36] italic mb-3">
+                    Choose standard or specific caliber weapon management
+                  </p>
+                  <div className="flex gap-4 justify-center">
+                    {[
+                      { id: "standard", label: "🤠 Standard Ammo", desc: "Classic simplified pistol, rifle, and shotgun ammo boxes." },
+                      { id: "calibers", label: "⚙️ Specific Calibers", desc: "Realistic scarcity. Uses .45 Colt, .44-40 Winchester, and 12 Gauge Shells. Shops have random supply; enemies drop matching types." }
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        onClick={() => {
+                          setPlayer({ ...player, ammoScarcity: opt.id === "calibers" });
+                        }}
+                        title={opt.desc}
+                        className={`flex-1 px-4 py-2 border rounded-sm transition-all focus:outline-none ${((opt.id === "calibers" && player.ammoScarcity) || (opt.id === "standard" && !player.ammoScarcity)) ? "border-[#e8b923] text-[#1a130f] bg-[#e8b923] shadow-[0_0_15px_rgba(232,185,35,0.15)] font-bold" : "border-[#bfae96] text-[#664d36] bg-[#f4ead5] hover:bg-[#dcd1b9]"}`}
+                      >
+                        <span className="text-[10px] uppercase tracking-wider font-serif block">{opt.label}</span>
+                        <span className="text-[8px] font-sans opacity-70 block mt-1 line-clamp-2 leading-tight">{opt.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Sign the Ledger inline */}
@@ -3282,15 +3864,37 @@ export default function App() {
                   }
 
                   setIntroNameError(null);
-                  setPlayer((prev) => ({
-                    ...prev,
-                    name: `${cleanFirst} ${cleanLast}`,
-                  }));
+                  const initialBulletin = generateMarketBulletin(worldLocations);
+                   setPlayer((prev) => {
+                    let finalInventory = [...prev.inventory];
+                    if (prev.ammoScarcity) {
+                      finalInventory = finalInventory.map((item) => {
+                        if (item.id === "ammo_pistol") {
+                          return {
+                            ...item,
+                            id: "ammo_45_colt",
+                            name: "Box of .45 Colt (Revolver)",
+                            details: "Standard revolver caliber cartridges. (Weight: 1 lb)",
+                          };
+                        }
+                        return item;
+                      });
+                    }
+                    return {
+                      ...prev,
+                      name: `${cleanFirst} ${cleanLast}`,
+                      inventory: finalInventory,
+                      activeMarketBulletin: initialBulletin,
+                    };
+                  });
                   setActiveView("town");
                   addLogMessage(
                     `📝 BAPTIZED: Known formally on the registry bounds as ${cleanFirst} ${cleanLast}.`,
                     "system",
                   );
+                  if (initialBulletin) {
+                    addLogMessage(initialBulletin.message, "loot");
+                  }
                   // FrontierAudio.setMute(false);
                   // setIsMuted(false);
                   // FrontierAudio.playMusic("world");
@@ -3307,6 +3911,8 @@ export default function App() {
             <div className="lg:col-span-12 h-full">
               <OverlandMap
                 locations={worldLocations}
+                overlandActors={overlandActors}
+                setOverlandActors={setOverlandActors}
                 currentLocationId={currentLocationId}
                 globalWeather={globalWeather}
                 player={player}
@@ -3330,12 +3936,12 @@ export default function App() {
                 passedSectors={passedSectors}
                 gameTimeHour={gameTimeHour}
                 advanceGameTime={advanceGameTime}
-                onStartCombat={(type, risk, mission) => {
+                onStartCombat={(type, risk, mission, provokedNpcId) => {
                   if (type === "ambush" || type === "duel") {
                     setCombatType(type);
                     setCombatRisk(risk);
                     setActiveMissionTarget(mission || null);
-                    setActiveProvokedNpcId(null);
+                    setActiveProvokedNpcId(provokedNpcId || null);
                     setPreCombatView("map");
                     setActiveView("combat");
                     addLogMessage(
@@ -3347,19 +3953,41 @@ export default function App() {
                       type,
                       risk,
                       mission: mission || null,
-                      provokedNpcId: null,
+                      provokedNpcId: provokedNpcId || null,
                       previousView: "map",
                     });
                   }
                 }}
                 onConfrontBoss={(mission) => setConfrontationModal(mission)}
+                onPlayerDeath={(reason) => {
+                  addLogMessage(
+                    reason || `☠️ ${player.name} died in the deserts... Gila vultures picked their pockets clean.`,
+                    "danger",
+                  );
+
+                  const currentHighScore = parseInt(
+                    safeLocalStorage.getItem("frontierHighScoreDays") || "0",
+                    10,
+                  );
+                  if (
+                    player.stats?.daysSurvived &&
+                    player.stats.daysSurvived > currentHighScore
+                  ) {
+                    safeLocalStorage.setItem(
+                      "frontierHighScoreDays",
+                      player.stats.daysSurvived.toString(),
+                    );
+                  }
+
+                  setActiveView("gameover");
+                }}
               />
             </div>
           )}
 
           {/* TOWN VIEW DISTRICT */}
           {activeView === "town" && !pendingCombat && currentLoc && (
-            <div className="lg:col-span-8 flex flex-col gap-4">
+            <div className="lg:col-span-12 flex flex-col gap-4">
               {/* Active Bounty Targets nearby warnings inside your inventory (Contract note checks) */}
               {currentTownMissionsTracked.length > 0 && (
                 <div className="flex flex-col gap-2">
@@ -3400,7 +4028,7 @@ export default function App() {
                               </>
                             )}
                           </span>
-                          <p className="text-[#2d2119] text-[10px] font-sans">
+                          <p className={`${isCombat ? "text-red-200" : "text-[#2d2119]"} text-[10px] font-sans`}>
                             {isCombat
                               ? `Your accepted bounty/infestation contract target is hiding within the outskirts saloon perimeter of ${currentLoc.name}. Ensure weapon cylinder is fully loaded before pulling trigger.`
                               : `You need to look around ${currentLoc.name} and ask questions. Keep a low profile and find leads on ${m.targetName}.`}
@@ -3465,12 +4093,13 @@ export default function App() {
                 onReturnToMap={() => setActiveView("map")}
                 onRaidStash={handleRaidStash}
                 onTriggerTip={triggerTip}
-                onStartCombat={(type, risk, mission, provokedNpcId) => {
+                onStartCombat={(type, risk, mission, provokedNpcId, provokedNpcName) => {
                   if (type === "duel" || type === "ambush") {
                     setCombatType(type);
                     setCombatRisk(risk);
                     setActiveMissionTarget(mission || null);
                     setActiveProvokedNpcId(provokedNpcId || null);
+                    setActiveProvokedNpcName(provokedNpcName || null);
                     setPreCombatView("town");
                     setActiveView("combat");
                     addLogMessage(
@@ -3483,6 +4112,7 @@ export default function App() {
                       risk,
                       mission: mission || null,
                       provokedNpcId: provokedNpcId || null,
+                      provokedNpcName: provokedNpcName || null,
                       previousView: "town",
                     });
                   }
@@ -3610,100 +4240,255 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Decisions Buttons */}
-                  <div className="space-y-2 pt-2 border-t border-[#bfae96]/45">
-                    <button
-                      id="btn-standoff-fight"
-                      onClick={() => {
-                        // Activate combat views using pending details
-                        setCombatType(pendingCombat.type);
-                        setCombatRisk(pendingCombat.risk);
-                        setActiveMissionTarget(pendingCombat.mission);
-                        if (pendingCombat.provokedNpcId) {
-                          setActiveProvokedNpcId(pendingCombat.provokedNpcId);
-                        } else {
-                          setActiveProvokedNpcId(null);
-                        }
-                        setPreCombatView(pendingCombat.previousView);
-                        setActiveView("combat");
-                        setPendingCombat(null);
-                        addLogMessage(
-                          `⚔️ ENGAGEMENT STARTED: ${player.name} stepped into the field against ${info.numEnemies} hostiles!`,
-                          "danger",
-                        );
-                      }}
-                      className="w-full py-2.5 bg-red-800 hover:bg-red-700 active:bg-red-900 border border-red-500 hover:border-red-400 text-stone-100 font-serif font-bold text-xs uppercase tracking-widest rounded-sm cursor-pointer transition-colors shadow-lg shadow-black"
-                    >
-                      🤠 Draw Iron & Fight (Commence Firefight)
-                    </button>
-                    <button
-                      id="btn-standoff-retreat"
-                      onClick={() => {
-                        // Evade combat
-                        const prev = pendingCombat.previousView;
+                  {/* Interactive Standoff Maneuvers Section */}
+                  <div className="pt-2 border-t border-[#bfae96]/45 space-y-4">
+                    {pendingCombat.selectedOptionResult ? (
+                      /* Display Roll Result */
+                      <div className="bg-[#dcd1b9] border-2 border-[#8c6b0c] p-3 rounded space-y-2.5">
+                        <div className="flex items-center justify-between border-b border-[#bfae96]/60 pb-1.5">
+                          <span className="text-[10px] uppercase font-mono text-[#5a4838] font-bold">
+                            Tactic Resolution
+                          </span>
+                          <span
+                            className={`text-xs font-serif font-black uppercase tracking-widest px-2 py-0.5 rounded ${
+                              pendingCombat.selectedOptionResult.success
+                                ? "bg-emerald-800 text-emerald-100"
+                                : "bg-red-800 text-red-100"
+                            }`}
+                          >
+                            {pendingCombat.selectedOptionResult.success ? "🎉 Success" : "❌ Failure"}
+                          </span>
+                        </div>
 
-                        if (
-                          pendingCombat.type === "bounty" &&
-                          pendingCombat.mission
-                        ) {
-                          const escapedName = pendingCombat.mission.targetName;
-                          setPlayer((p) => {
-                            const existingNemesis = (p.nemeses || []).find(
-                              (n) => n.name === escapedName,
-                            );
-                            if (existingNemesis) {
-                              addLogMessage(
-                                `😠 NEMESIS ESCAPED: ${escapedName} slipped away again! They will bolster their numbers and hunt you down.`,
-                                "danger",
-                              );
-                              return {
-                                ...p,
-                                nemeses: p.nemeses!.map((n) =>
-                                  n.name === escapedName
-                                    ? {
-                                        ...n,
-                                        powerLevel: n.powerLevel + 0.2,
-                                        gangSize: Math.min(4, n.gangSize + 1),
-                                        encounters: n.encounters + 1,
-                                        isHunting: true,
-                                      }
-                                    : n,
-                                ),
-                              };
-                            } else {
-                              addLogMessage(
-                                `😠 NEMESIS CREATED: You retreated from ${escapedName}. They won't forget this slight and are now hunting you across the frontier!`,
-                                "danger",
-                              );
-                              const newNemesis: Nemesis = {
-                                id: pendingCombat.mission!.id,
-                                name: escapedName,
-                                type: "bounty",
-                                powerLevel: 1.2,
-                                gangSize: 2,
-                                faction: "outlaws",
-                                isHunting: true,
-                                encounters: 1,
-                              };
-                              return {
-                                ...p,
-                                nemeses: [...(p.nemeses || []), newNemesis],
-                              };
+                        <div className="text-[11px] font-mono leading-relaxed text-[#2d2119]">
+                          <span className="font-bold">Skill Check:</span> {pendingCombat.selectedOptionResult.skillName} (Needed: <span className="font-bold text-[#8c6b0c]">&lt;= {pendingCombat.selectedOptionResult.needed}%</span>) <br />
+                          <span className="font-bold">Result Roll:</span> <span className="font-bold text-[#8c6b0c]">{pendingCombat.selectedOptionResult.roll}</span> (Target met: {pendingCombat.selectedOptionResult.success ? "Yes" : "No"})
+                        </div>
+
+                        <p className="text-xs text-[#2d2119] font-sans italic bg-[#dfd4be]/40 p-2 rounded border border-[#bfae96]/30 leading-relaxed">
+                          "{pendingCombat.selectedOptionResult.message}"
+                        </p>
+
+                        <p className="text-[11px] text-stone-100 bg-stone-900 px-2 py-1.5 rounded font-mono leading-relaxed">
+                          {pendingCombat.selectedOptionResult.resolvedText}
+                        </p>
+
+                        {pendingCombat.selectedOptionResult.bypassCombat ? (
+                          <div className="w-full py-2 bg-[#d2b48c] border border-stone-800 text-stone-950 font-serif font-black text-xs uppercase tracking-widest rounded shadow-md text-center animate-pulse">
+                            🤠 Securing Area...
+                          </div>
+                        ) : (
+                          <div className="w-full py-2 bg-red-800 border border-red-500 text-stone-100 font-serif font-bold text-xs uppercase tracking-widest rounded shadow-md text-center animate-pulse">
+                            🤠 Entering Firefight...
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* Display Standoff Options */
+                      <div className="space-y-3">
+                        <div className="bg-[#c6ba9f]/60 p-2.5 rounded border border-[#bfae96]/40 space-y-1">
+                          <span className="text-[10px] font-serif font-bold uppercase tracking-wider text-[#8c6b0c] block">
+                            ⚡ Interactive Standoff Tactics
+                          </span>
+                          <p className="text-[10.5px] text-[#5a4838] leading-normal font-sans">
+                            Choose a maneuver to influence the battle's onset or resolve it peacefully. Your level & mastery in skills improve success rates.
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                          {pendingCombat.options?.map((opt) => {
+                            const metrics = getSkillMetrics(opt.skill, player, opt.baseChance);
+                            let skillLabel = "";
+                            let currentLvl = 0;
+                            let currentMst = 0;
+
+                            switch (opt.skill) {
+                              case "charisma":
+                                skillLabel = "Charisma (Persuasion)";
+                                currentLvl = player.appraisalSkillLevel || 0;
+                                currentMst = player.barterSkill || 0;
+                                break;
+                              case "stealth":
+                                skillLabel = "Stealth (Sabotage)";
+                                currentLvl = player.silenceSkillLevel || 0;
+                                currentMst = player.silenceSkill || 0;
+                                break;
+                              case "perception":
+                                skillLabel = "Perception (Scouting)";
+                                currentLvl = player.appraisalSkillLevel || 0;
+                                currentMst = player.scoutingMastery || 0;
+                                break;
+                              case "marksman":
+                                skillLabel = "Marksman (Firearms)";
+                                currentLvl = player.pistolSkillLevel || 0;
+                                currentMst = player.pistolSkill || 0;
+                                break;
+                              case "survival":
+                                skillLabel = "Survival (Medicine)";
+                                currentLvl = player.appraisalSkillLevel || 0;
+                                currentMst = player.medicineSkill || 0;
+                                break;
                             }
-                          });
-                        }
 
-                        setPendingCombat(null);
-                        setActiveView(prev);
-                        addLogMessage(
-                          `🏃 EVADED FIREFIGHT: ${player.name} stealthily recoiled from the standoff and slipped back to safe cover.`,
-                          "system",
-                        );
-                      }}
-                      className="w-full py-2 bg-[#dfd4bd] hover:bg-[#3d2d21] border border-[#e8b923]/30 hover:border-[#e8b923]/50 text-[#2d2119] hover:text-white font-serif font-bold text-[10px] uppercase tracking-wider rounded-sm cursor-pointer transition-colors"
-                    >
-                      🏃 Retreat / Evade Standoff (Retreat Safely)
-                    </button>
+                            // Resource verification
+                            let canAfford = true;
+                            if (opt.cost) {
+                              if (opt.cost.type === "gold" && (player.gold || 0) < opt.cost.amount) {
+                                canAfford = false;
+                              }
+                            }
+
+                            return (
+                              <div
+                                key={opt.id}
+                                className="bg-[#dfd4be]/70 border border-[#bfae96] rounded p-3 flex flex-col justify-between space-y-2 text-left hover:bg-[#dfd4be] transition-colors"
+                              >
+                                <div className="space-y-1.5">
+                                  <div className="flex justify-between items-start">
+                                    <span className="font-serif font-bold text-xs text-stone-900 leading-tight">
+                                      {opt.title}
+                                    </span>
+                                    {opt.cost && (
+                                      <span className={`text-[9.5px] font-mono px-1.5 py-0.5 rounded font-bold ${canAfford ? "bg-amber-100 text-amber-900 border border-amber-300" : "bg-red-100 text-red-900 border border-red-300 animate-pulse"}`}>
+                                        Cost: {opt.cost.type === "gold" ? `$${opt.cost.amount} Gold` : `${opt.cost.amount} RDS`}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                                    <span className="bg-[#c6ba9f] text-stone-800 px-1.5 py-0.5 rounded font-mono uppercase font-bold text-[8.5px]">
+                                      🎯 {skillLabel} (Lvl {currentLvl} | {currentMst} Mst)
+                                    </span>
+                                    <span className="bg-[#8c6b0c] text-amber-50 px-1.5 py-0.5 rounded font-bold font-mono">
+                                      🎲 {metrics.totalChance}% Chance
+                                    </span>
+                                  </div>
+
+                                  <p className="text-[11px] text-[#2d2119] leading-snug font-sans">
+                                    {opt.description}
+                                  </p>
+
+                                  <div className="text-[9.5px] font-mono text-[#5a4838] border-t border-[#bfae96]/55 pt-1.5 space-y-0.5">
+                                    <div><span className="text-emerald-700 font-bold">On Success:</span> {opt.successText}</div>
+                                    <div><span className="text-red-700 font-bold">On Failure:</span> {opt.failureText}</div>
+                                  </div>
+                                </div>
+
+                                <button
+                                  onClick={() => handleResolveStandoffOption(opt)}
+                                  disabled={!canAfford}
+                                  className={`w-full py-1.5 rounded font-mono text-[10.5px] font-bold uppercase tracking-wider border transition-colors ${
+                                    canAfford
+                                      ? "bg-[#3d2d21] text-[#dfd4bd] border-stone-800 hover:bg-stone-900 cursor-pointer"
+                                      : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                  }`}
+                                >
+                                  {canAfford ? "Execute Maneuver" : "Cannot Afford"}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Standard Action Buttons */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-[#bfae96]/45">
+                      <button
+                        id="btn-standoff-fight"
+                        onClick={() => {
+                          // Activate combat views using pending details
+                          setCombatType(pendingCombat.type);
+                          setCombatRisk(pendingCombat.risk);
+                          setActiveMissionTarget(pendingCombat.mission);
+                          if (pendingCombat.provokedNpcId) {
+                            setActiveProvokedNpcId(pendingCombat.provokedNpcId);
+                            setActiveProvokedNpcName(pendingCombat.provokedNpcName || null);
+                          } else {
+                            setActiveProvokedNpcId(null);
+                            setActiveProvokedNpcName(null);
+                          }
+                          setPreCombatView(pendingCombat.previousView);
+                          setActiveView("combat");
+                          setPendingCombat(null);
+                          addLogMessage(
+                            `⚔️ ENGAGEMENT STARTED: ${player.name} stepped into the field against ${info.numEnemies} hostiles!`,
+                            "danger",
+                          );
+                        }}
+                        className="w-full py-2 bg-red-800 hover:bg-red-700 active:bg-red-900 border border-red-500 hover:border-red-400 text-stone-100 font-serif font-bold text-xs uppercase tracking-widest rounded-sm cursor-pointer transition-colors shadow-md text-center"
+                      >
+                        🤠 Draw Iron & Fight (Commence Firefight)
+                      </button>
+                      <button
+                        id="btn-standoff-retreat"
+                        onClick={() => {
+                          // Evade combat
+                          const prev = pendingCombat.previousView;
+
+                          if (
+                            pendingCombat.type === "bounty" &&
+                            pendingCombat.mission
+                          ) {
+                            const escapedName = pendingCombat.mission.targetName;
+                            setPlayer((p) => {
+                              const existingNemesis = (p.nemeses || []).find(
+                                (n) => n.name === escapedName,
+                              );
+                              if (existingNemesis) {
+                                addLogMessage(
+                                  `😠 NEMESIS ESCAPED: ${escapedName} slipped away again! They will bolster their numbers and hunt you down.`,
+                                  "danger",
+                                );
+                                return {
+                                  ...p,
+                                  nemeses: p.nemeses!.map((n) =>
+                                    n.name === escapedName
+                                      ? {
+                                          ...n,
+                                          powerLevel: n.powerLevel + 0.2,
+                                          gangSize: Math.min(4, n.gangSize + 1),
+                                          encounters: n.encounters + 1,
+                                          isHunting: true,
+                                        }
+                                      : n,
+                                  ),
+                                };
+                              } else {
+                                addLogMessage(
+                                  `😠 NEMESIS CREATED: You retreated from ${escapedName}. They won't forget this slight and are now hunting you across the frontier!`,
+                                  "danger",
+                                );
+                                const newNemesis: Nemesis = {
+                                  id: pendingCombat.mission!.id,
+                                  name: escapedName,
+                                  type: "bounty",
+                                  powerLevel: 1.2,
+                                  gangSize: 2,
+                                  faction: "outlaws",
+                                  isHunting: true,
+                                  encounters: 1,
+                                };
+                                return {
+                                  ...p,
+                                  nemeses: [...(p.nemeses || []), newNemesis],
+                                };
+                              }
+                            });
+                          }
+
+                          setPendingCombat(null);
+                          setActiveView(prev);
+                          addLogMessage(
+                            `🏃 EVADED FIREFIGHT: ${player.name} stealthily recoiled from the standoff and slipped back to safe cover.`,
+                            "system",
+                          );
+                        }}
+                        className="w-full py-2 bg-[#dfd4bd] hover:bg-[#3d2d21] border border-[#e8b923]/30 hover:border-[#e8b923]/50 text-[#2d2119] hover:text-white font-serif font-bold text-xs uppercase tracking-widest rounded-sm cursor-pointer transition-colors shadow-md text-center"
+                      >
+                        🏃 Retreat / Evade Standoff (Retreat Safely)
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -3724,6 +4509,7 @@ export default function App() {
                 currentLocation={currentLoc}
                 activeMissionTarget={activeMissionTarget}
                 activeProvokedNpcId={activeProvokedNpcId}
+                activeProvokedNpcName={activeProvokedNpcName}
                 forcedWeather={godModeWeather}
                 forcedTimeOfDay={godModeTimeOfDay}
                 gameTimeHour={gameTimeHour}
@@ -4029,24 +4815,6 @@ export default function App() {
             activeView !== "victory_story" &&
             activeView !== "sheriff_meeting" && (
               <>
-                {/* Left/Middle Column Panel (Character HUD details) */}
-                <div
-                  className={`lg:col-span-4 flex flex-col gap-4 transition-all duration-500 hover:opacity-100 ${activeView === "map" ? "opacity-40 saturate-50" : "opacity-100"}`}
-                >
-                  <CharacterSheet
-                    player={player}
-                    onDropItem={handleDropItem}
-                    onEquipWeapon={handleEquipWeapon}
-                    onDismissPosseMember={handleDismissPosseMember}
-                    onRenameHorse={handleRenameHorse}
-                    onRenameWeapon={handleRenameWeapon}
-                    onOpenGunsmith={() => setShowWeaponBenchModal(true)}
-                    onUpdateAppearance={(appearance) =>
-                      setPlayer((p) => ({ ...p, appearance }))
-                    }
-                  />
-                </div>
-
                 {/* Bottom notification log feed */}
                 <div
                   className={`lg:col-span-12 h-[180px] mt-4 transition-opacity duration-500 hover:opacity-100 ${activeView === "map" ? "opacity-50" : "opacity-100"}`}
@@ -4058,6 +4826,27 @@ export default function App() {
         </main>
 
         {/* HELP INSTRUCTIONS MODAL CARD OVERLAY */}
+        {showCharacterModal && (
+          <CharacterModal
+            player={player}
+            onClose={() => setShowCharacterModal(false)}
+            onUpdateAppearance={(appearance) =>
+              setPlayer((p) => ({ ...p, appearance }))
+            }
+            onUpgradeSkill={handleUpgradeSkill}
+          />
+        )}
+
+        {showInventoryModal && (
+          <InventoryModal
+            player={player}
+            onClose={() => setShowInventoryModal(false)}
+            onDropItem={handleDropItem}
+            onEquipWeapon={handleEquipWeapon}
+            onEquipMount={handleEquipMount}
+          />
+        )}
+
         {showWeaponBenchModal && (
           <WeaponBenchModal
             player={player}
@@ -4077,13 +4866,14 @@ export default function App() {
 
         {/* Confrontation Modal */}
         {confrontationModal && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100] backdrop-blur-sm">
-            <div className="bg-[#f4ead5] w-full max-w-xl border-4 border-[#3d2d21] rounded-sm p-6 shadow-[0_0_40px_rgba(0,0,0,0.8)]">
-              <h2 className="text-xl font-bold uppercase text-red-700 tracking-widest font-serif mb-4 flex items-center gap-2 border-b-2 border-red-900/20 pb-2">
-                <Skull className="text-red-700" /> Confrontation:{" "}
-                {confrontationModal.targetName}
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-0 sm:p-4 z-[100] backdrop-blur-sm">
+            <div className="bg-[#f4ead5] w-full h-full sm:h-auto max-w-xl border-0 sm:border-4 border-[#3d2d21] sm:rounded-sm p-4 sm:p-6 shadow-[0_0_40px_rgba(0,0,0,0.8)] max-h-screen sm:max-h-[90vh] flex flex-col overflow-hidden">
+              <h2 className="text-base sm:text-xl font-bold uppercase text-red-700 tracking-widest font-serif mb-4 flex items-center gap-2 border-b-2 border-red-900/20 pb-2 shrink-0">
+                <Skull className="text-red-700 shrink-0" size={18} /> Confrontation:{" "}
+                <span className="truncate">{confrontationModal.targetName}</span>
               </h2>
-              <div className="text-sm font-sans text-[#4d3a2b] space-y-4 mb-6">
+              
+              <div className="text-xs sm:text-sm font-sans text-[#4d3a2b] space-y-4 mb-4 overflow-y-auto flex-1 pr-1 custom-scrollbar">
                 <p>
                   You step into the dilapidated hideout, hand hovering closely
                   over your revolver. Before you can draw,{" "}
@@ -4111,14 +4901,14 @@ export default function App() {
                     nourishment."
                   </p>
                 )}
-                <p className="text-xs mt-4 italic text-zinc-600 font-serif">
+                <p className="text-[10px] sm:text-xs mt-4 italic text-zinc-600 font-serif">
                   You hold the contract for ${confrontationModal.rewardGold}.
                   Returning with their head (or capturing them) fulfills it. But
                   you could also turn a blind eye...
                 </p>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2.5 shrink-0 pt-2 border-t border-[#bfae96]/40">
                 <button
                   onClick={() => {
                     setConfrontationModal(null);
@@ -4132,7 +4922,7 @@ export default function App() {
                       "danger",
                     );
                   }}
-                  className="w-full py-2 bg-[#dfd4bd] hover:bg-red-900 hover:text-white text-[#664d36] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-left px-4"
+                  className="w-full py-2.5 sm:py-2 bg-[#dfd4bd] hover:bg-red-900 hover:text-white text-[#664d36] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-left px-4 cursor-pointer rounded-xs"
                 >
                   1. "I'm just here for the bounty." (Initiate Combat)
                 </button>
@@ -4167,7 +4957,7 @@ export default function App() {
                       "system",
                     );
                   }}
-                  className="w-full py-2 bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-left px-4"
+                  className="w-full py-2.5 sm:py-2 bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#3d2d21] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-left px-4 cursor-pointer rounded-xs"
                 >
                   2. "Turn around and run. I never saw you." (Let them go)
                 </button>
@@ -4178,82 +4968,708 @@ export default function App() {
 
         {/* Investigation Modal */}
         {investigationModal && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[100] backdrop-blur-sm">
-            <div className="bg-[#f4ead5] w-full max-w-xl border-4 border-[#3d2d21] rounded-sm p-6 shadow-[0_0_40px_rgba(0,0,0,0.8)]">
-              <h2 className="text-xl font-bold uppercase text-[#8c6b0c] tracking-widest font-serif mb-4 flex items-center gap-2 border-b-2 border-[#bfae96] pb-2">
-                <Compass className="text-[#8c6b0c]" /> Investigation:{" "}
-                {investigationModal.title}
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-0 sm:p-4 z-[100] backdrop-blur-sm">
+            <div className="bg-[#f4ead5] w-full h-full sm:h-auto max-w-xl border-0 sm:border-4 border-[#3d2d21] sm:rounded-sm p-4 sm:p-6 shadow-[0_0_40px_rgba(0,0,0,0.8)] max-h-screen sm:max-h-[90vh] flex flex-col overflow-hidden">
+              <h2 className="text-base sm:text-xl font-bold uppercase text-[#8c6b0c] tracking-widest font-serif mb-4 flex items-center gap-2 border-b-2 border-[#bfae96] pb-2 shrink-0">
+                <Compass className="text-[#8c6b0c] shrink-0" size={18} /> Investigation:{" "}
+                <span className="truncate">{investigationModal.title}</span>
               </h2>
-              <div className="text-sm font-sans text-[#4d3a2b] space-y-4 mb-6">
-                <p>
-                  You decided to investigate the rumor regarding{" "}
-                  {investigationModal.targetName}. You look around the area for
-                  clues or anyone who might know something.
-                </p>
-                <p className="text-xs mt-4 italic text-zinc-600 font-serif">
-                  You can attempt to gather information or use your intuition.
-                  What do you do?
-                </p>
-              </div>
 
-              <div className="space-y-3">
-                <button
-                  onClick={() => {
-                    setInvestigationModal(null);
+              {investigationOutcome ? (
+                // Outcome Screen
+                <div className="flex flex-col flex-1 overflow-hidden space-y-4">
+                  <div className={`p-4 border rounded-sm font-sans text-xs sm:text-sm overflow-y-auto flex-1 pr-1 custom-scrollbar ${
+                    investigationOutcome.success 
+                      ? "bg-emerald-950/25 border-emerald-800 text-emerald-900" 
+                      : "bg-red-950/25 border-red-800 text-red-900"
+                  }`}>
+                    <p className="font-semibold mb-2">
+                      {investigationOutcome.success ? "✨ SUCCESSFUL ACTION" : "⚠️ UNFORTUNATE OUTCOME"}
+                    </p>
+                    <p>{investigationOutcome.text}</p>
+                    {investigationOutcome.rewardText && (
+                      <p className="mt-2 text-xs italic font-semibold text-amber-800">
+                        {investigationOutcome.rewardText}
+                      </p>
+                    )}
+                  </div>
 
-                    // Simple resolution: Give XP, a small amount of gold, and complete it
-                    setPlayer((prev) => ({
-                      ...prev,
-                      gold: prev.gold + (investigationModal.rewardGold || 50),
-                      xp: prev.xp + (investigationModal.rewardXp || 20),
-                      inventory: prev.inventory.filter(
-                        (item) => item.id !== investigationModal.id,
-                      ),
-                    }));
+                  <button
+                    onClick={() => {
+                      if (investigationOutcome.success) {
+                        setPlayer((prev) => {
+                          const newEntry = {
+                            id: Math.random().toString(36).substr(2, 9),
+                            date: new Date().toLocaleDateString(),
+                            title: investigationModal.title || "Investigation",
+                            text: investigationOutcome.text
+                          };
+                          const existingEntries = prev.journalEntries || [];
+                          // Avoid exact duplicates
+                          if (!existingEntries.find(e => e.text === newEntry.text)) {
+                            return { ...prev, journalEntries: [newEntry, ...existingEntries] };
+                          }
+                          return prev;
+                        });
+                      }
 
-                    addLogMessage(
-                      `🔍 INVESTIGATION COMPLETE: You uncovered the truth about ${investigationModal.targetName} and found a hidden stash of $${investigationModal.rewardGold}.`,
-                      "system",
-                    );
-                  }}
-                  className="w-full py-2 bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-left px-4"
-                >
-                  1. "I'll follow the trail..." (Resolve Investigation)
-                </button>
+                      if (investigationOutcome.isFlavor) {
+                        setInvestigationOutcome(null);
+                        return;
+                      }
 
-                <button
-                  onClick={() => {
-                    setInvestigationModal(null);
-                  }}
-                  className="w-full py-2 bg-transparent hover:bg-black/5 text-[#664d36] font-bold text-xs uppercase tracking-widest border border-transparent transition-colors text-left px-4"
-                >
-                  2. Step away for now.
-                </button>
-              </div>
+                      // Perform state advancement or completion
+                      const currentStage = investigationModal.stage || 1;
+                      const maxStages = investigationModal.maxStages || 1;
+                      const isLastStage = currentStage === maxStages;
+
+                      const isCombat = [
+                        "bounty",
+                        "robbery",
+                        "nest_clearing",
+                        "escort",
+                        "story_assassination",
+                        "story_heist",
+                      ].includes(investigationModal.type);
+
+                      if (isCombat) {
+                        setInvestigationOutcome(null);
+                        return;
+                      }
+
+                      if (isLastStage) {
+                        // Deliver full completion
+                        setPlayer((prev) => {
+                          const nextGold = prev.gold + (investigationModal.rewardGold || 200);
+                          const nextXp = prev.xp + (investigationModal.rewardXp || 100);
+                          const nextRep = Math.max(-100, Math.min(100, (prev.reputation || 0) + (investigationModal.reputationChange || 15)));
+                          const nextInv = prev.inventory.filter((item) => item.id !== investigationModal.id);
+                          const nextQuests = prev.acceptedQuests?.filter((q) => q.id !== investigationModal.id) || [];
+                          
+                          let updatedInv = [...nextInv];
+                          if (investigationModal.type === "myth") {
+                            updatedInv.push({
+                              id: "ancient_relic_" + Math.random().toString(36).substr(2, 5),
+                              name: "💎 Ancient Dutchman Relic",
+                              type: "value" as const,
+                              value: 400,
+                              count: 1,
+                              details: "A legendary solid gold miner's emblem. Can be held or sold at shops for high value."
+                            });
+                          }
+
+                          return {
+                            ...prev,
+                            gold: nextGold,
+                            xp: nextXp,
+                            reputation: nextRep,
+                            inventory: updatedInv,
+                            acceptedQuests: nextQuests
+                          };
+                        });
+
+                        // Remove from worldLocations
+                        setWorldLocations((prevLocs) =>
+                          prevLocs.map((loc) => ({
+                            ...loc,
+                            quests: loc.quests.filter((q) => q.id !== investigationModal.id)
+                          }))
+                        );
+
+                        addLogMessage(
+                          `🏆 QUEST COMPLETED: ${investigationModal.title}! Gained +${investigationModal.rewardGold} Gold, +${investigationModal.rewardXp} XP, and ${investigationModal.reputationChange > 0 ? "+" : ""}${investigationModal.reputationChange} Reputation!`,
+                          "system"
+                        );
+                      } else {
+                        // Advance stage
+                        const nextStage = currentStage + 1;
+                        const nextLocId = investigationModal.stageTargets?.[nextStage - 1] || investigationModal.targetLocationId;
+                        
+                        // Update player and world
+                        setPlayer((prev) => {
+                          const nextQuests = prev.acceptedQuests?.map((q) => {
+                            if (q.id === investigationModal.id) {
+                              return {
+                                ...q,
+                                stage: nextStage,
+                                targetLocationId: nextLocId
+                              };
+                            }
+                            return q;
+                          }) || [];
+
+                          const nextInv = prev.inventory.map((item) => {
+                            if (item.id === investigationModal.id) {
+                              const nextInst = investigationModal.stageInstructions?.[nextStage - 1] || item.details;
+                              return {
+                                ...item,
+                                details: nextInst
+                              };
+                            }
+                            return item;
+                          });
+
+                          return {
+                            ...prev,
+                            acceptedQuests: nextQuests,
+                            inventory: nextInv
+                          };
+                        });
+
+                        setWorldLocations((prevLocs) =>
+                          prevLocs.map((loc) => ({
+                            ...loc,
+                            quests: loc.quests.map((q) => {
+                              if (q.id === investigationModal.id) {
+                                return {
+                                  ...q,
+                                  stage: nextStage,
+                                  targetLocationId: nextLocId
+                                };
+                              }
+                              return q;
+                            })
+                          }))
+                        );
+
+                        const nextInstructions = investigationModal.stageInstructions?.[nextStage - 1] || "Proceed to the next clue.";
+                        addLogMessage(
+                          `🔍 QUEST UPDATED (${nextStage}/${maxStages}): ${nextInstructions}`,
+                          "system"
+                        );
+                      }
+
+                      // Clear outcome and modal
+                      setInvestigationOutcome(null);
+                      setInvestigationModal(null);
+                    }}
+                    className="w-full py-2.5 sm:py-2 bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#3d2d21] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-center shrink-0"
+                  >
+                    Continue
+                  </button>
+                </div>
+              ) : (
+                // Interactive Choices Screen
+                <div className="flex flex-col flex-1 overflow-hidden">
+                  <div className="text-xs sm:text-sm font-sans text-[#4d3a2b] space-y-3 sm:space-y-4 mb-4 overflow-y-auto flex-1 pr-1 custom-scrollbar">
+                    {investigationModal.stage !== undefined ? (
+                      <>
+                        <div className="bg-amber-100/50 border border-amber-300 p-2 text-[10px] font-semibold rounded-sm text-amber-900 uppercase tracking-wider flex justify-between shrink-0">
+                          <span>Quest Stage: {investigationModal.stage} of {investigationModal.maxStages}</span>
+                          <span>{investigationModal.type?.toUpperCase()}</span>
+                        </div>
+                        <p className="font-serif italic text-sm sm:text-base font-semibold leading-relaxed text-[#2d2119]">
+                          "{investigationModal.stageInstructions?.[(investigationModal.stage || 1) - 1] || investigationModal.description}"
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p>
+                          You decided to investigate the rumor regarding{" "}
+                          {investigationModal.targetName}. You look around the area for
+                          clues or anyone who might know something.
+                        </p>
+                        <p className="text-xs mt-4 italic text-zinc-600 font-serif">
+                          You can attempt to gather information or use your intuition. What do you do?
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="space-y-2.5 shrink-0 pt-2 border-t border-[#bfae96]/40">
+                    {/* Render Choices based on Quest Type and Stage */}
+                    {(() => {
+                      const type = investigationModal.type;
+                      const stage = investigationModal.stage || 1;
+
+                      // Helper variables
+                      const hasScout = player.posse && player.posse.some((p) => p.role === "Scout");
+                      const hasMedic = player.posse && player.posse.some((p) => p.role === "Medic");
+                      const hasBodyguard = player.posse && player.posse.some((p) => p.role === "Bodyguard");
+                      const hasWhiskey = player.inventory?.some((i) => i.id === "whiskey" && (i.count ?? 1) >= 1);
+                      const hasDynamite = player.inventory?.some((i) => i.id === "dynamite" && (i.count ?? 1) >= 1);
+                      const hasLockpick = player.inventory?.some((i) => i.id === "lockpick" && (i.count ?? 1) >= 1);
+                      const hasCanteen = player.inventory?.some((i) => i.id === "canteen" && (i.count ?? 1) >= 1);
+
+                      if (type === "myth") {
+                        if (stage === 1) {
+                          return (
+                            <>
+                              <button
+                                disabled={player.gold < 35}
+                                onClick={() => {
+                                  setPlayer(prev => ({ ...prev, gold: prev.gold - 35 }));
+                                  setInvestigationOutcome({
+                                    text: "You slide $35 across the table. The Chief Archivist looks around, takes the coins, and quietly hands over a dusty 1860 military survey map showing a hidden mountain valley.",
+                                    success: true,
+                                    rewardText: "Cost: $35 Gold"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  player.gold >= 35 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                1. Bribe the Chief Archivist for $35 {player.gold < 35 && "(Insufficient Gold)"}
+                              </button>
+
+                              <button
+                                disabled={!hasScout}
+                                onClick={() => {
+                                  const scoutName = player.posse?.find(p => p.role === "Scout")?.name || "Your Scout";
+                                  setInvestigationOutcome({
+                                    text: `${scoutName} uses their advanced knowledge of territory cartography to find the correct archives drawer in minutes, uncovering a surveyor's leather journal detailing the route.`,
+                                    success: true,
+                                    rewardText: "Scout specialty activated!"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  hasScout 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                2. Have your Scout sift through maps {!hasScout && "(Requires Scout in Posse)"}
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  const success = Math.random() < 0.65;
+                                  if (success) {
+                                    setInvestigationOutcome({
+                                      text: "You spend 3 long hours coughing in the dust of the archives, but eventually find an old land survey describing the Dutchman's campsite landmarks!",
+                                      success: true,
+                                      rewardText: "Success Rate: 65%"
+                                    });
+                                  } else {
+                                    setPlayer(prev => ({ ...prev, hp: Math.max(5, prev.hp - 10) }));
+                                    setInvestigationOutcome({
+                                      text: "You spent hours sifting through dry grain receipts, but found nothing of value. You leave with a terrible dust allergy and a splitting headache.",
+                                      success: false,
+                                      rewardText: "Lost -10 HP from severe physical strain"
+                                    });
+                                  }
+                                }}
+                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96] transition-all"
+                              >
+                                3. Search manually (Take hours, 65% Success rate)
+                              </button>
+                            </>
+                          );
+                        } else if (stage === 2) {
+                          return (
+                            <>
+                              <button
+                                disabled={player.gold < 50}
+                                onClick={() => {
+                                  setPlayer(prev => ({ ...prev, gold: prev.gold - 50 }));
+                                  setInvestigationOutcome({
+                                    text: "You hire a local university scholar passing through. They pull out their custom brass magnifying glass, analyze the symbols, and tell you they indicate the base of the Black Mountain.",
+                                    success: true,
+                                    rewardText: "Cost: $50 Gold"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  player.gold >= 50 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                1. Hire local university scholar ($50) {player.gold < 50 && "(Insufficient Gold)"}
+                              </button>
+
+                              <button
+                                disabled={!hasWhiskey}
+                                onClick={() => {
+                                  consumeInventoryItem("whiskey", 1);
+                                  setInvestigationOutcome({
+                                    text: "You gift the bottle of Premium Whiskey to the old prospector sitting by the stove. He laughs, downs a double swig, and says: 'I know that mark! Old Jacob used it to mark the Whispering Cave!'",
+                                    success: true,
+                                    rewardText: "Consumed: 1x Premium Whiskey"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  hasWhiskey 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                2. Trade Premium Whiskey to an old pioneer {!hasWhiskey && "(Requires Premium Whiskey)"}
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  const success = Math.random() < 0.50;
+                                  if (success) {
+                                    setInvestigationOutcome({
+                                      text: "You sit down, staring intensely at the maps. Suddenly, you remember seeing a similar rune in a military journal from your scout days. It references a water spring!",
+                                      success: true,
+                                      rewardText: "Success Rate: 50%"
+                                    });
+                                  } else {
+                                    setPlayer(prev => ({ ...prev, hp: Math.max(5, prev.hp - 15) }));
+                                    setInvestigationOutcome({
+                                      text: "You spend hours trying to decode the symbols, but the patterns merge and blur. You get a fierce migraine from eye-strain.",
+                                      success: false,
+                                      rewardText: "Lost -15 HP from severe mental strain"
+                                    });
+                                  }
+                                }}
+                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96] transition-all"
+                              >
+                                3. Study the markings yourself (50% Success rate)
+                              </button>
+                            </>
+                          );
+                        } else {
+                          return (
+                            <>
+                              <button
+                                disabled={!hasDynamite}
+                                onClick={() => {
+                                  consumeInventoryItem("dynamite", 1);
+                                  setInvestigationOutcome({
+                                    text: "BOOM! You throw a stick of dynamite and take cover. The explosion shatters the rock slide, clearing a wide path directly to the Lost Dutchman's treasure chest!",
+                                    success: true,
+                                    rewardText: "Consumed: 1x Stick of Dynamite"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  hasDynamite 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                1. Blast the caved-in entrance with Dynamite {!hasDynamite && "(Requires Stick of Dynamite)"}
+                              </button>
+
+                              <button
+                                disabled={!hasLockpick}
+                                onClick={() => {
+                                  consumeInventoryItem("lockpick", 1);
+                                  setInvestigationOutcome({
+                                    text: "With a satisfying metallic CLICK, you pick the complex, ancient locks of the heavy iron door protecting the mine shaft. It swings open easily.",
+                                    success: true,
+                                    rewardText: "Consumed: 1x Skeleton Key (Lockpick)"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  hasLockpick 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                2. Carefully pick the caved-in iron locks {!hasLockpick && "(Requires Skeleton Keys)"}
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  setPlayer(prev => ({ ...prev, hp: Math.max(5, prev.hp - 30) }));
+                                  setInvestigationOutcome({
+                                    text: "You dig and lift heavy boulders with bare hands and sheer muscle. Your palms bleed and your back is strained, but you successfully clear a small crawlway to the chest!",
+                                    success: true,
+                                    rewardText: "Lost -30 HP from extreme physical exhaustion"
+                                  });
+                                }}
+                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-amber-700 border-[#bfae96] transition-all"
+                              >
+                                3. Clear heavy rubble by hand (Guaranteed Success, Costs -30 HP)
+                              </button>
+                            </>
+                          );
+                        }
+                      }
+
+                      if (type === "diplomacy") {
+                        if (stage === 1) {
+                          return (
+                            <>
+                              <button
+                                disabled={!hasCanteen}
+                                onClick={() => {
+                                  consumeInventoryItem("canteen", 1);
+                                  setInvestigationOutcome({
+                                    text: "You present a Trail Canteen of cold spring water and standard food provisions. Chief Red Cloud's scouts appreciate the respect shown to dry-land travel and nod in welcome.",
+                                    success: true,
+                                    rewardText: "Consumed: 1x Trail Canteen"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  hasCanteen 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                1. Offer cold Trail Canteen water and rations {!hasCanteen && "(Requires Trail Canteen)"}
+                              </button>
+
+                              <button
+                                disabled={!hasMedic}
+                                onClick={() => {
+                                  const medicName = player.posse?.find(p => p.role === "Medic")?.name || "Your Medic";
+                                  setInvestigationOutcome({
+                                    text: `${medicName} steps forward without weapons and spends hours treating a scout who has a high fever and infected wound. The scouts bow in high honor and guide you safely to the village.`,
+                                    success: true,
+                                    rewardText: "Medic specialty activated!"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  hasMedic 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                2. Have your Medic tend to a sick tribal scout {!hasMedic && "(Requires Medic in Posse)"}
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  const success = Math.random() < 0.60;
+                                  if (success) {
+                                    setInvestigationOutcome({
+                                      text: "You raise empty hands and speak clearly of the Painted Canyon. Your level-headed composure convinces them that you represent peace.",
+                                      success: true,
+                                      rewardText: "Success Rate: 60%"
+                                    });
+                                  } else {
+                                    setPlayer(prev => ({ ...prev, hp: Math.max(5, prev.hp - 15) }));
+                                    setInvestigationOutcome({
+                                      text: "The scouts are highly nervous and unleash warning arrows. A brief physical scuffle occurs before they finally accept your peaceful credentials.",
+                                      success: false,
+                                      rewardText: "Lost -15 HP in physical parley struggle"
+                                    });
+                                  }
+                                }}
+                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96] transition-all"
+                              >
+                                3. Parley unarmed using formal sign language (60% Success rate)
+                              </button>
+                            </>
+                          );
+                        } else if (stage === 2) {
+                          return (
+                            <>
+                              <button
+                                disabled={player.gold < 100}
+                                onClick={() => {
+                                  setPlayer(prev => ({ ...prev, gold: prev.gold - 100 }));
+                                  setInvestigationOutcome({
+                                    text: "You pay $100 for filing fees and boundary adjustments. The legal clerk smiles, seals the papers, and registers the Apache reservation lands in the permanent ledger.",
+                                    success: true,
+                                    rewardText: "Cost: $100 Gold"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  player.gold >= 100 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                1. Pay land registry fee of $100 to settle deeds {player.gold < 100 && "(Insufficient Gold)"}
+                              </button>
+
+                              <button
+                                disabled={!hasBodyguard}
+                                onClick={() => {
+                                  const guardName = player.posse?.find(p => p.role === "Bodyguard")?.name || "Your Bodyguard";
+                                  setInvestigationOutcome({
+                                    text: `${guardName} cracks their massive knuckles and looms over the clerk's desk. The sweating clerk stammers, signing the boundary adjustment papers and waiving all administrative costs!`,
+                                    success: true,
+                                    rewardText: "Bodyguard specialty activated!"
+                                  });
+                                }}
+                                className={`w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase transition-all ${
+                                  hasBodyguard 
+                                    ? "bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96]" 
+                                    : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
+                                }`}
+                              >
+                                2. Have your Bodyguard intimidate the bureau clerk {!hasBodyguard && "(Requires Bodyguard in Posse)"}
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  const success = Math.random() < 0.65;
+                                  if (success) {
+                                    setInvestigationOutcome({
+                                      text: "You debate federal treaty codes eloquently. The bureau is forced to acknowledge the Apache hunting boundary line, granting the deed.",
+                                      success: true,
+                                      rewardText: "Success Rate: 65%"
+                                    });
+                                  } else {
+                                    setPlayer(prev => ({ ...prev, gold: prev.gold - 50 }));
+                                    setInvestigationOutcome({
+                                      text: "The legal arguments are locked in bureaucracy. You are forced to pay $50 for a fast-track hearing to push the deeds through anyway.",
+                                      success: true,
+                                      rewardText: "Success rate check failed: Cost $50 in fast-track court fees"
+                                    });
+                                  }
+                                }}
+                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96] transition-all"
+                              >
+                                3. Debate legal treaty borders with clerk (65% Success rate)
+                              </button>
+                            </>
+                          );
+                        } else {
+                          return (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setInvestigationOutcome({
+                                    text: "You place the sealed land deeds on the table. Chief Red Cloud and the commissioner grasp hands and sign. The threat of railroad war is averted permanently!",
+                                    success: true,
+                                    rewardText: "Final Signature Seated"
+                                  });
+                                }}
+                                className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-emerald-800 border-emerald-600 transition-all"
+                              >
+                                1. Present the deeds and sign Treaty of the Painted Canyon
+                              </button>
+                            </>
+                          );
+                        }
+                      }
+
+                      // Check if this is a combat/bounty style quest
+                      const isCombat = [
+                        "bounty",
+                        "robbery",
+                        "nest_clearing",
+                        "escort",
+                        "story_assassination",
+                        "story_heist",
+                      ].includes(type);
+
+                      if (isCombat) {
+                        return (
+                          <>
+                            <button
+                              onClick={() => {
+                                setInvestigationModal(null);
+                                startActiveBountyBattle(investigationModal);
+                              }}
+                              className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-red-800 hover:bg-red-700 text-stone-100 border-red-600 transition-all flex items-center justify-between cursor-pointer"
+                            >
+                              <span>⚔️ Draw weapons and assault the hideout!</span>
+                              <span className="text-[10px] bg-red-950 px-1.5 py-0.5 rounded text-red-300">Initiate Combat</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                const roll = Math.random() < 0.7;
+                                if (roll) {
+                                  setInvestigationOutcome({
+                                    text: `You quietly scope out the perimeter of ${investigationModal.targetName}'s hideout. You find a side window left unlatched, allowing you to catch them completely off-guard!`,
+                                    success: true,
+                                    rewardText: "Gain Surprise Advantage: Enemy starting turn delayed!"
+                                  });
+                                } else {
+                                  setPlayer((prev) => ({ ...prev, hp: Math.max(5, prev.hp - 10) }));
+                                  setInvestigationOutcome({
+                                    text: `While trying to sneak around the back alley, you accidentally knock over a pile of iron pans. A lookout spots you and fires a warning shot that grazes your arm!`,
+                                    success: false,
+                                    rewardText: "Failed Stealth Check: Lost 10 HP. Outlaws are now alerted!"
+                                  });
+                                }
+                              }}
+                              className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#0f4c81] border-[#bfae96] transition-all cursor-pointer"
+                            >
+                              🔍 Sneak around to gain tactical advantage (70% success)
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setInvestigationOutcome({
+                                  text: `You sit down at the local saloon and ask about ${investigationModal.targetName}. A tipsy customer whispers: "Pete? Oh, he's a lightweight! Stole a donkey when he was drunk, and now he is hidin' behind the stables with a terrible hangover."`,
+                                  success: true,
+                                  rewardText: "Rumor gathered: Target weakness uncovered (Hangover)"
+                                });
+                              }}
+                              className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#0f4c81] border-[#bfae96] transition-all cursor-pointer"
+                            >
+                              💬 Ask the locals for a rumor about the target
+                            </button>
+                          </>
+                        );
+                      }
+
+                      // Scavenge or generic single-stage resolution
+                      return (
+                        <>
+                          <button
+                            onClick={() => {
+                              const questTitle = investigationModal.title || "the investigation";
+                              const textNarrative = questTitle.toLowerCase().includes("relic")
+                                ? `You execute a thorough search of the area. After dusting off desert sand, sifting through camp debris, and searching behind weathered red canyon rocks, you successfully locate the sacred objects! The ancient Apache relics are safe in your possession, preserved from desecration.`
+                                : `You spend hours meticulously surveying the terrain. Following the faint clues and tracks left behind, you successfully uncover exactly what you came here for, hidden safely beneath a heavy rock shelf. Your efforts have paid off!`;
+
+                              setInvestigationOutcome({
+                                text: textNarrative,
+                                success: true,
+                                rewardText: `🏆 Secured: +${investigationModal.rewardGold || 100} Gold and +${investigationModal.rewardXp || 50} XP! (Claim Reward)`
+                              });
+                            }}
+                            className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2e7d32] border-[#2e7d32]/30 transition-all cursor-pointer"
+                          >
+                            🔍 "Investigate carefully..." (Complete Quest & Claim Reward)
+                          </button>
+ 
+                          <button
+                            onClick={() => {
+                              setInvestigationOutcome({
+                                text: `You spend time asking the townspeople about this investigation. An elderly settler tells you: "Ah, that legend's been around for decades. Many tried to locate it, but only the brave find the truth!"`,
+                                success: true,
+                                rewardText: "Uncovered historic folklore: Gained deep insight!",
+                                isFlavor: true
+                              });
+                            }}
+                            className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#0f4c81] border-[#bfae96] transition-all cursor-pointer"
+                          >
+                            💬 Ask locals for folklore & rumors
+                          </button>
+                        </>
+                      );
+                    })()}
+
+                    <button
+                      id="btn-investigate-leave"
+                      onClick={() => {
+                        setInvestigationModal(null);
+                        setInvestigationOutcome(null);
+                      }}
+                      className="w-full py-2 bg-transparent hover:bg-black/5 text-[#664d36] font-bold text-xs uppercase tracking-widest border border-transparent transition-colors text-center cursor-pointer shrink-0"
+                    >
+                      Step away for now
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {showHelpModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-[#d4cbba] border border-stone-800 rounded-lg p-5 max-w-md w-full relative space-y-4 shadow-2xl">
-              <div className="flex justify-between items-center border-b border-stone-800 pb-2">
-                <h3 className="text-sm font-bold uppercase text-white flex items-center gap-1.5">
+          <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-0 sm:p-4 backdrop-blur-sm">
+            <div className="bg-[#d4cbba] border-0 sm:border border-stone-800 sm:rounded-lg p-4 sm:p-5 max-w-md w-full h-full sm:h-auto max-h-screen sm:max-h-[90vh] relative flex flex-col space-y-4 shadow-2xl overflow-hidden">
+              <div className="flex justify-between items-center border-b border-stone-800 pb-2 shrink-0">
+                <h3 className="text-xs sm:text-sm font-bold uppercase text-[#3d2d21] flex items-center gap-1.5">
                   <Compass size={14} className="text-amber-500" /> Arizona
                   Cowboy Survival Compendium
                 </h3>
                 <button
                   id="btn-close-help"
                   onClick={() => setShowHelpModal(false)}
-                  className="text-[#5a4838] hover:text-white font-bold"
+                  className="text-[#5a4838] hover:text-[#3d2d21] font-bold p-1 cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
 
-              <div className="space-y-3 font-sans text-xs text-[#2d2119] leading-relaxed">
+              <div className="space-y-3 font-sans text-xs text-[#2d2119] leading-relaxed overflow-y-auto flex-1 pr-1 custom-scrollbar">
                 <div className="space-y-1">
-                  <span className="font-mono text-[10px] text-amber-500 font-bold block">
+                  <span className="font-mono text-[10px] text-amber-600 font-bold block">
                     1. OVERLAND TRAVEL
                   </span>
                   <p>
@@ -4264,7 +5680,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-1">
-                  <span className="font-mono text-[10px] text-amber-500 font-bold block">
+                  <span className="font-mono text-[10px] text-amber-600 font-bold block">
                     2. TACTICAL COMBAT ACTIONS
                   </span>
                   <p>
@@ -4276,7 +5692,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-1">
-                  <span className="font-mono text-[10px] text-amber-500 font-bold block">
+                  <span className="font-mono text-[10px] text-amber-600 font-bold block">
                     3. BANK ROBBERIES Heist Choice
                   </span>
                   <p>
@@ -4288,7 +5704,7 @@ export default function App() {
                 </div>
 
                 <div className="space-y-1">
-                  <span className="font-mono text-[10px] text-amber-500 font-bold block">
+                  <span className="font-mono text-[10px] text-amber-600 font-bold block">
                     4. LEVELING UP
                   </span>
                   <p>
@@ -4302,7 +5718,7 @@ export default function App() {
               <button
                 id="btn-confirm-close-help"
                 onClick={() => setShowHelpModal(false)}
-                className="w-full py-1.5 bg-stone-950 hover:bg-stone-850 text-[#2d2119] rounded font-bold uppercase text-[10px] border border-stone-800 cursor-pointer"
+                className="w-full py-2 bg-stone-900 hover:bg-stone-850 text-white rounded font-bold uppercase text-xs border border-stone-800 cursor-pointer shrink-0"
               >
                 Return to Battle
               </button>
@@ -4349,6 +5765,7 @@ export default function App() {
                   reloadSkill: player.reloadSkill,
                   horsemanship: player.horsemanship,
                   silenceSkill: player.silenceSkill,
+                  scoutingSkill: player.scoutingSkill,
                   posse: player.posse,
                 });
                 setPlayer((prev) => ({
@@ -4361,6 +5778,7 @@ export default function App() {
                   reloadSkill: 100,
                   horsemanship: 100,
                   silenceSkill: 100,
+                  scoutingSkill: 3,
                 }));
                 addLogMessage(
                   "⚡ GOD MODE ACTIVATED: Unlimited Stats enabled.",
@@ -4382,6 +5800,8 @@ export default function App() {
                       preGodModeState.horsemanship || prev.horsemanship,
                     silenceSkill:
                       preGodModeState.silenceSkill || prev.silenceSkill,
+                    scoutingSkill:
+                      preGodModeState.scoutingSkill !== undefined ? preGodModeState.scoutingSkill : prev.scoutingSkill,
                     posse: preGodModeState.posse || prev.posse,
                   }));
                 }

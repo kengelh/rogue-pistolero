@@ -79,7 +79,7 @@ export function getRandomHitLocation(): HitLocation {
   return 'LEGS';
 }
 
-export function applyAutoBandaging(injuries: InjurySystem, inventory: any[]): { newInjuries: InjurySystem, newInventory: any[], logMsgs: string[] } {
+export function applyAutoBandaging(injuries: InjurySystem, inventory: any[], medicineSkillLevel?: number): { newInjuries: InjurySystem, newInventory: any[], logMsgs: string[] } {
   const newState = JSON.parse(JSON.stringify(injuries)) as InjurySystem;
   const newInv = [...inventory];
   const logs: string[] = [];
@@ -103,6 +103,11 @@ export function applyAutoBandaging(injuries: InjurySystem, inventory: any[]): { 
       }
       part.isUntreated = false;
       logs.push(`Medical: Applied a bandage to ${partName}.`);
+    } else if (medicineSkillLevel && medicineSkillLevel >= 2) {
+      // Level 2 Field Medicine: Herbal Remedies
+      part.isUntreated = false;
+      part.integrity = Math.min(100, part.integrity + 10);
+      logs.push(`Medical: Out of bandages, but crafted a Potent Herbal Wrap to treat ${partName} (+10 Part HP)!`);
     } else {
       part.isUntreated = true;
       logs.push(`Medical: Out of bandages! ${partName} is left untreated!`);

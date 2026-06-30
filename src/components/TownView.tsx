@@ -69,6 +69,7 @@ interface TownViewProps {
     risk: number,
     targetMission?: Mission | null,
     provokedNpcId?: string,
+    provokedNpcName?: string
   ) => void;
   onReturnToMap: () => void;
   addLogMessage: (
@@ -301,6 +302,40 @@ export const MERCENARY_POOL: (PosseMember & {
     signupCost: 225,
     alignment: "lawful",
   },
+  {
+    id: "recruit_guard_billy",
+    name: "Billy 'Shotgun' Wheeler",
+    role: "Trade Guard",
+    hp: 90,
+    maxHp: 90,
+    dmg: 18,
+    range: 3,
+    dailyRateGold: 1,
+    portrait: "💂",
+    description: "Cheap wagon guard. Reduces road ambush chance by 20% (stackable with other Trade Guards).",
+    backstory: "A reliable farmhand who's spent years riding shotgun on grain wagons. No fancy tricks, just a steady aim.",
+    trait: "loyal",
+    morale: 65,
+    signupCost: 45,
+    alignment: "lawful",
+  },
+  {
+    id: "recruit_guard_silas",
+    name: "Silas 'Caravan' Cooper",
+    role: "Trade Guard",
+    hp: 100,
+    maxHp: 100,
+    dmg: 14,
+    range: 4,
+    dailyRateGold: 1,
+    portrait: "🛡️",
+    description: "Experienced wagon sentinel. Reduces road ambush chance by 20% (stackable with other Trade Guards).",
+    backstory: "Guarded lumber shipments in Oregon before heading south. Knows exactly where highwaymen hide.",
+    trait: "loyal",
+    morale: 70,
+    signupCost: 50,
+    alignment: "neutral",
+  },
 ];
 
 export const TownView: React.FC<TownViewProps> = ({
@@ -358,6 +393,7 @@ export const TownView: React.FC<TownViewProps> = ({
   const maxCapacity = getMaxCapacity(
     player.hasHorse,
     player.activeCarriage?.type,
+    player,
   );
   const [directionsCost, setDirectionsCost] = useState(10);
 
@@ -500,6 +536,13 @@ export const TownView: React.FC<TownViewProps> = ({
 
     if (!targetLoc) {
       setBarkeepDialogue({ speaker: "Saloon Barkeep", text: fallbackText });
+    } else if (Math.abs(targetLoc.x - location.x) < 1 && Math.abs(targetLoc.y - location.y) < 1) {
+      setBarkeepDialogue({
+        speaker: "Saloon Barkeep",
+        text: `Are you blind, partner? You're standin' right in the middle of ${specificName || "it"}! Look around town or check your logs.`,
+      });
+      setShowDirectionsMenu(false);
+      return;
     } else {
       // Get direction
       const dx = targetLoc.x - location.x;
@@ -611,6 +654,89 @@ export const TownView: React.FC<TownViewProps> = ({
     repValue = player.factionReputation?.lawmen ?? 0;
   }
 
+  const locType = location.type;
+  const prosperity = location.prosperity ?? 50;
+
+  const hasSaloon = 
+    locType === "boomtown" || 
+    locType === "outlaw_haven" || 
+    locType === "railway_hub" || 
+    (prosperity >= 30 && locType !== "hostile_camp" && locType !== "ephemeral_stash" && locType !== "desert_oasis" && locType !== "mine");
+
+  const hasGeneralStore = 
+    locType !== "ephemeral_stash" && locType !== "hostile_camp"; 
+
+  const hasCrafting = 
+    locType === "boomtown" || 
+    locType === "railway_hub" || 
+    locType === "cavalry_fort" ||
+    (prosperity >= 40 && locType !== "ephemeral_stash" && locType !== "desert_oasis" && locType !== "mine");
+
+  const hasTrading = 
+    locType === "railway_hub" || 
+    locType === "cavalry_fort" || 
+    locType === "boomtown" || 
+    (prosperity >= 60 && locType !== "ephemeral_stash" && locType !== "mine" && locType !== "hostile_camp");
+
+  const hasBank = 
+    locType === "boomtown" || 
+    locType === "railway_hub" || 
+    (prosperity >= 50 && locType !== "ephemeral_stash" && locType !== "mine" && locType !== "ghost_town" && locType !== "hostile_camp" && locType !== "outlaw_haven");
+
+  const hasSheriff = 
+    locType === "cavalry_fort" || 
+    ((factionType === "lawmen" || factionType === "neutral") && locType !== "ephemeral_stash" && locType !== "mine" && locType !== "hostile_camp" && locType !== "outlaw_haven" && locType !== "ghost_town" && prosperity >= 20);
+
+  const hasBanditBoss = 
+    locType === "outlaw_haven" || locType === "hostile_camp";
+
+  const hasDoctor = 
+    locType === "boomtown" || 
+    locType === "railway_hub" || 
+    locType === "cavalry_fort" || 
+    (prosperity >= 35 && locType !== "ephemeral_stash" && locType !== "hostile_camp");
+
+  let labelSaloon = "Local Saloon";
+  if (locType === "cavalry_fort") labelSaloon = "Officer's Mess";
+  if (locType === "native_settlement") labelSaloon = "Communal Fire";
+
+  let labelGeneralStore = "Merchant Yard";
+  if (locType === "cavalry_fort") labelGeneralStore = "Quartermaster";
+  if (locType === "native_settlement") labelGeneralStore = "Trader's Tent";
+
+  let labelCrafting = "Gunsmith Bench";
+  if (locType === "cavalry_fort") labelCrafting = "Armory";
+  if (locType === "native_settlement") labelCrafting = "Crafter's Lodge";
+
+  let labelTrading = "Trade Depot";
+  if (locType === "cavalry_fort") labelTrading = "Supply Depot";
+  if (locType === "native_settlement") labelTrading = "Trade Exchange";
+
+  let labelBank = "Outpost Bank";
+  if (locType === "cavalry_fort") labelBank = "Fort Treasury";
+  if (locType === "native_settlement") labelBank = "Communal Cache";
+
+  let labelSheriff = "Sheriff's Office";
+  if (hasBanditBoss) labelSheriff = location.leaderName ? `${location.leaderName}'s Tent` : "Bandit Boss";
+  else if (locType === "cavalry_fort") labelSheriff = location.leaderName ? `${location.leaderName}'s Tent` : "Command Tent";
+  else if (locType === "native_settlement") labelSheriff = location.leaderName ? `${location.leaderName}'s Lodge` : "Peacekeeper";
+  else if (location.leaderName) labelSheriff = `${location.leaderName}'s Office`;
+
+  let labelDoctor = "Surgeon";
+  if (locType === "cavalry_fort") labelDoctor = "Field Hospital";
+  if (locType === "native_settlement") labelDoctor = "Healer's Lodge";
+
+  useEffect(() => {
+    // If player traveled to a location that doesn't support the active tab, fall back to map
+    if (activeTab === "saloon" && !hasSaloon) setActiveTab("map");
+    if (activeTab === "general" && !hasGeneralStore) setActiveTab("map");
+    if (activeTab === "crafting" && !hasCrafting) setActiveTab("map");
+    if (activeTab === "trading" && !hasTrading) setActiveTab("map");
+    if (activeTab === "bank" && !hasBank) setActiveTab("map");
+    if (activeTab === "sheriff" && !hasSheriff && !hasBanditBoss) setActiveTab("map");
+    if (activeTab === "doctor" && !hasDoctor) setActiveTab("map");
+  }, [location.id, activeTab, hasSaloon, hasGeneralStore, hasCrafting, hasTrading, hasBank, hasSheriff, hasBanditBoss, hasDoctor]);
+
   const ratingColor =
     repValue >= 20
       ? "text-teal-400"
@@ -718,11 +844,18 @@ export const TownView: React.FC<TownViewProps> = ({
   const npcDialogue = getResponsiveDialogue();
 
   // Crafting trigger helpers
+  const getRequiredMaterialCount = (baseCount: number) => {
+    if ((player.salvageSkillLevel || 0) >= 3) {
+      return Math.max(1, Math.round(baseCount * 0.70));
+    }
+    return baseCount;
+  };
+
   const canCraftUpgrade = (type: "barrel" | "clip" | "scope" | "rifling") => {
-    if (type === "barrel") return gunpowderCount >= 5;
-    if (type === "clip") return safeSpringsCount >= 3;
-    if (type === "scope") return glassScopeCount >= 3;
-    if (type === "rifling") return safeSpringsCount >= 4;
+    if (type === "barrel") return gunpowderCount >= getRequiredMaterialCount(5);
+    if (type === "clip") return safeSpringsCount >= getRequiredMaterialCount(3);
+    if (type === "scope") return glassScopeCount >= getRequiredMaterialCount(3);
+    if (type === "rifling") return safeSpringsCount >= getRequiredMaterialCount(4);
     return false;
   };
 
@@ -730,17 +863,17 @@ export const TownView: React.FC<TownViewProps> = ({
     type: "barrel" | "clip" | "scope" | "rifling",
   ) => {
     let mats: { [key: string]: number } = {};
-    if (type === "barrel") mats = { gunpowder: 5 };
-    if (type === "clip") mats = { safe_springs: 3 };
-    if (type === "scope") mats = { glass_scope: 3 };
-    if (type === "rifling") mats = { safe_springs: 4 };
+    if (type === "barrel") mats = { gunpowder: getRequiredMaterialCount(5) };
+    if (type === "clip") mats = { safe_springs: getRequiredMaterialCount(3) };
+    if (type === "scope") mats = { glass_scope: getRequiredMaterialCount(3) };
+    if (type === "rifling") mats = { safe_springs: getRequiredMaterialCount(4) };
 
     onCraftUpgrade(type, mats);
   };
 
   const canCraftWeapon = (type: "shotgun" | "rifle") => {
-    if (type === "shotgun") return gunpowderCount >= 5;
-    if (type === "rifle") return gunpowderCount >= 6 && safeSpringsCount >= 4;
+    if (type === "shotgun") return gunpowderCount >= getRequiredMaterialCount(5);
+    if (type === "rifle") return gunpowderCount >= getRequiredMaterialCount(6) && safeSpringsCount >= getRequiredMaterialCount(4);
     return false;
   };
 
@@ -750,14 +883,14 @@ export const TownView: React.FC<TownViewProps> = ({
         "Sawed-Off Shotgun (Crafted)",
         "wpn_shotgun_crafted",
         { dmg: 35, range: 3, maxClip: 2 },
-        { gunpowder: 5 },
+        { gunpowder: getRequiredMaterialCount(5) },
       );
     } else {
       onCraftWeapon(
         "Winchester Rifle (Crafted)",
         "wpn_rifle_crafted",
         { dmg: 28, range: 8, maxClip: 6 },
-        { gunpowder: 6, safe_springs: 4 },
+        { gunpowder: getRequiredMaterialCount(6), safe_springs: getRequiredMaterialCount(4) },
       );
     }
   };
@@ -955,96 +1088,110 @@ export const TownView: React.FC<TownViewProps> = ({
 
           {location.type !== "ephemeral_stash" && (
             <>
-              <button
-                id="tab-saloon"
-                onClick={() => setActiveTab("saloon")}
-                className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
-                  activeTab === "saloon"
-                    ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
-                    : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
-                }`}
-              >
-                <Beer size={13} className="text-[#8c6b0c]" />
-                <span>Local Saloon</span>
-              </button>
+              {hasSaloon && (
+                <button
+                  id="tab-saloon"
+                  onClick={() => setActiveTab("saloon")}
+                  className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
+                    activeTab === "saloon"
+                      ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
+                      : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
+                  }`}
+                >
+                  <Beer size={13} className="text-[#8c6b0c]" />
+                  <span>{labelSaloon}</span>
+                </button>
+              )}
 
-              <button
-                id="tab-general"
-                onClick={() => setActiveTab("general")}
-                className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
-                  activeTab === "general"
-                    ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
-                    : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
-                }`}
-              >
-                <Store size={13} className="text-[#8c6b0c]" />
-                <span>Merchant Yard</span>
-              </button>
+              {hasGeneralStore && (
+                <button
+                  id="tab-general"
+                  onClick={() => setActiveTab("general")}
+                  className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
+                    activeTab === "general"
+                      ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
+                      : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
+                  }`}
+                >
+                  <Store size={13} className="text-[#8c6b0c]" />
+                  <span>{labelGeneralStore}</span>
+                </button>
+              )}
 
-              <button
-                id="tab-crafting"
-                onClick={() => setActiveTab("crafting")}
-                className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
-                  activeTab === "crafting"
-                    ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
-                    : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
-                }`}
-              >
-                <Hammer size={13} className="text-[#8c6b0c]" />
-                <span>Gunsmith Bench</span>
-              </button>
+              {hasCrafting && (
+                <button
+                  id="tab-crafting"
+                  onClick={() => setActiveTab("crafting")}
+                  className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
+                    activeTab === "crafting"
+                      ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
+                      : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
+                  }`}
+                >
+                  <Hammer size={13} className="text-[#8c6b0c]" />
+                  <span>{labelCrafting}</span>
+                </button>
+              )}
 
-              <button
-                id="tab-trading"
-                onClick={() => setActiveTab("trading")}
-                className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
-                  activeTab === "trading"
-                    ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
-                    : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
-                }`}
-              >
-                <Package size={13} className="text-[#8c6b0c]" />
-                <span>Trade Depot</span>
-              </button>
+              {hasTrading && (
+                <button
+                  id="tab-trading"
+                  onClick={() => setActiveTab("trading")}
+                  className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
+                    activeTab === "trading"
+                      ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
+                      : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
+                  }`}
+                >
+                  <Package size={13} className="text-[#8c6b0c]" />
+                  <span>{labelTrading}</span>
+                </button>
+              )}
 
-              <button
-                id="tab-bank"
-                onClick={() => setActiveTab("bank")}
-                className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
-                  activeTab === "bank"
-                    ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
-                    : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
-                }`}
-              >
-                <Landmark size={13} className="text-[#8c6b0c]" />
-                <span>Outpost Bank</span>
-              </button>
+              {hasBank && (
+                <button
+                  id="tab-bank"
+                  onClick={() => setActiveTab("bank")}
+                  className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
+                    activeTab === "bank"
+                      ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
+                      : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
+                  }`}
+                >
+                  <Landmark size={13} className="text-[#8c6b0c]" />
+                  <span>{labelBank}</span>
+                </button>
+              )}
 
-              <button
-                id="tab-sheriff"
-                onClick={() => setActiveTab("sheriff")}
-                className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
-                  activeTab === "sheriff"
-                    ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
-                    : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
-                }`}
-              >
-                <ShieldAlert size={13} className="text-[#8c6b0c]" />
-                <span>Sheriff's Office</span>
-              </button>
+              {(hasSheriff || hasBanditBoss) && (
+                <button
+                  id="tab-sheriff"
+                  onClick={() => setActiveTab("sheriff")}
+                  className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
+                    activeTab === "sheriff"
+                      ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
+                      : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
+                  }`}
+                >
+                  <ShieldAlert size={13} className="text-[#8c6b0c]" />
+                  <span>{labelSheriff}</span>
+                </button>
+              )}
 
-              <button
-                id="tab-doctor"
-                onClick={() => setActiveTab("doctor")}
-                className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
-                  activeTab === "doctor"
-                    ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
-                    : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
-                }`}
-              >
-                <PlusCircle size={13} className="text-[#8c6b0c]" />
-                <span>Surgeon</span>
-              </button>
+              {hasDoctor && (
+                <button
+                  id="tab-doctor"
+                  onClick={() => setActiveTab("doctor")}
+                  className={`flex-shrink-0 md:flex-none py-2 px-3 rounded-sm flex items-center justify-center md:justify-start gap-2.5 font-bold transition-all text-xs font-serif tracking-wider ${
+                    activeTab === "doctor"
+                      ? "bg-[#3d2d21] text-[#8c6b0c] border border-[#8a705a] shadow-inner"
+                      : "text-[#664d36] hover:text-[#3d2d21] bg-[#e8dec7]/60 hover:bg-[#e8dec7] border border-[#bfae96]/60"
+                  }`}
+                >
+                  <PlusCircle size={13} className="text-[#8c6b0c]" />
+                  <span>{labelDoctor}</span>
+                </button>
+              )}
             </>
           )}
         </div>
@@ -1764,53 +1911,102 @@ export const TownView: React.FC<TownViewProps> = ({
 
               {/* Dynamic Merchant Items with modified pricing */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1">
-                {location.shop
-                  .filter((item) => {
-                    // If town is abandoned, hide high tier weapons
-                    if (
-                      item.type === "weapon" &&
-                      item.cost > 150 &&
-                      location.prosperity !== undefined &&
-                      location.prosperity < 30
-                    )
-                      return false;
-                    return true;
-                  })
-                  .concat(
-                    location.prosperity && location.prosperity >= 80
-                      ? [
-                          {
-                            id: "wep_prosperous_rifle",
-                            name: "Gilded Buffalo Rifle",
-                            type: "weapon",
-                            cost: 600,
-                            details:
-                              "Boom town exclusive. Devastating power and extreme range.",
-                            weaponStats: { dmg: 65, range: 9, maxClip: 5 },
-                          },
-                          {
-                            id: "item_prosperous_medkit",
-                            name: "Premium Medical Kit",
-                            type: "consumable",
-                            cost: 100,
-                            details:
-                              "Restores 100 HP. Imported goods from back East.",
-                          },
-                        ]
-                      : [],
-                  )
-                  .map((item) => {
+                {(() => {
+                  let rawItems = [...location.shop];
+                  if (player.ammoScarcity) {
+                    rawItems = rawItems.map((item) => {
+                      if (item.id === "ammo_pistol") {
+                        return {
+                          ...item,
+                          id: "ammo_45_colt",
+                          name: "Box of .45 Colt (Revolver)",
+                          cost: 15,
+                          details: "Standard revolver caliber cartridges. Adds 12 shots. (Weight: 1 lb)",
+                        };
+                      }
+                      if (item.id === "ammo_rifle") {
+                        return {
+                          ...item,
+                          id: "ammo_44_40_winchester",
+                          name: "Box of .44-40 Winchester (Rifle)",
+                          cost: 25,
+                          details: "Winchester caliber rifle cartridges. Adds 10 shots. (Weight: 2 lbs)",
+                        };
+                      }
+                      if (item.id === "ammo_shotgun") {
+                        return {
+                          ...item,
+                          id: "ammo_12_gauge",
+                          name: "Box of 12 Gauge Shells (Shotgun)",
+                          cost: 30,
+                          details: "12 Gauge shotgun shells. Adds 8 shots. (Weight: 2 lbs)",
+                        };
+                      }
+                      return item;
+                    });
+                  }
+
+                  const filtered = rawItems
+                    .filter((item) => {
+                      // If town is abandoned, hide high tier weapons
+                      if (
+                        item.type === "weapon" &&
+                        item.cost > 150 &&
+                        location.prosperity !== undefined &&
+                        location.prosperity < 30
+                      )
+                        return false;
+                      return true;
+                    })
+                    .concat(
+                      location.prosperity && location.prosperity >= 80
+                        ? [
+                            {
+                              id: "wep_prosperous_rifle",
+                              name: "Gilded Buffalo Rifle",
+                              type: "weapon",
+                              cost: 600,
+                              details:
+                                "Boom town exclusive. Devastating power and extreme range.",
+                              weaponStats: { dmg: 65, range: 9, maxClip: 5 },
+                            },
+                            {
+                              id: "item_prosperous_medkit",
+                              name: "Premium Medical Kit",
+                              type: "consumable",
+                              cost: 100,
+                              details:
+                                "Restores 100 HP. Imported goods from back East.",
+                            },
+                          ]
+                        : [],
+                    );
+
+                  return filtered.map((item) => {
                     const finalCost = Math.round(item.cost * costMultiplier);
-                    const canBuy = player.gold >= finalCost;
+                    
+                    // Determine if caliber ammo is out of stock in this specific location
+                    const isCaliber = item.id === "ammo_45_colt" || item.id === "ammo_44_40_winchester" || item.id === "ammo_12_gauge";
+                    const isOutOfStock = player.ammoScarcity && isCaliber && (() => {
+                      const str = location.id + item.id;
+                      let hash = 0;
+                      for (let i = 0; i < str.length; i++) {
+                        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                      }
+                      return Math.abs(hash) % 10 < 3; // 30% chance out of stock
+                    })();
+
+                    const canBuy = player.gold >= finalCost && !isOutOfStock;
 
                     return (
                       <div
                         key={item.id}
-                        className="p-3 bg-[#dfd4bd] border border-[#bfae96] rounded-sm flex items-center justify-between gap-3 hover:border-[#8a705a]/50 transition-all"
+                        className={`p-3 border rounded-sm flex items-center justify-between gap-3 hover:border-[#8a705a]/50 transition-all ${isOutOfStock ? "bg-[#d4cbbaba] border-[#c4451a]/30 opacity-75" : "bg-[#dfd4bd] border-[#bfae96]"}`}
                       >
                         <div className="space-y-1 min-w-0">
-                          <span className="text-[#8c6b0c] font-serif font-bold block text-xs truncate">
+                          <span className={`font-serif font-bold block text-xs truncate ${isOutOfStock ? "text-[#c4451a]" : "text-[#8c6b0c]"}`}>
                             {item.name}
+                            {isOutOfStock && <span className="ml-1.5 text-[8px] px-1 bg-[#c4451a] text-white rounded font-sans uppercase">Out of Stock</span>}
                           </span>
                           <span className="text-[10px] text-[#4a3928] block font-sans leading-relaxed truncate">
                             {item.details}
@@ -1818,16 +2014,22 @@ export const TownView: React.FC<TownViewProps> = ({
                         </div>
 
                         <div className="text-right flex-shrink-0">
-                          <span className="text-[#8c6b0c] font-bold block text-xs font-mono">
-                            ${finalCost}{" "}
-                            {costMultiplier !== 1.0 && (
-                              <span
-                                className={`text-[8px] font-mono ${costMultiplier < 1.0 ? "text-green-500" : "text-red-400"}`}
-                              >
-                                ({costMultiplier < 1.0 ? "Discount" : "Markup"})
-                              </span>
-                            )}
-                          </span>
+                          {isOutOfStock ? (
+                            <span className="text-[#c4451a] font-bold block text-xs font-mono">
+                              SOLD OUT
+                            </span>
+                          ) : (
+                            <span className="text-[#8c6b0c] font-bold block text-xs font-mono">
+                              ${finalCost}{" "}
+                              {costMultiplier !== 1.0 && (
+                                <span
+                                  className={`text-[8px] font-mono ${costMultiplier < 1.0 ? "text-green-500" : "text-red-400"}`}
+                                >
+                                  ({costMultiplier < 1.0 ? "Discount" : "Markup"})
+                                </span>
+                              )}
+                            </span>
+                          )}
                           <button
                             id={`buy-${item.id}`}
                             onClick={() => {
@@ -1840,12 +2042,13 @@ export const TownView: React.FC<TownViewProps> = ({
                                 : "bg-[#dcd1b9] text-[#664d36] cursor-not-allowed opacity-30 shadow-none"
                             }`}
                           >
-                            Buy Item
+                            {isOutOfStock ? "Unavailable" : "Buy Item"}
                           </button>
                         </div>
                       </div>
                     );
-                  })}
+                  });
+                })()}
               </div>
             </div>
           )}
@@ -1984,6 +2187,8 @@ export const TownView: React.FC<TownViewProps> = ({
                     good.id,
                     good.basePrice,
                     location,
+                    player,
+                    false,
                   );
                   const playerOwnedObj = player.tradeInventory?.find(
                     (i) => i.itemId === good.id,
@@ -2117,12 +2322,12 @@ export const TownView: React.FC<TownViewProps> = ({
                       <span>Requires:</span>
                       <span
                         className={
-                          gunpowderCount >= 5
+                          gunpowderCount >= getRequiredMaterialCount(5)
                             ? "text-green-400"
                             : "text-red-400"
                         }
                       >
-                        5x Powder ({gunpowderCount}/5)
+                        {getRequiredMaterialCount(5)}x Powder ({gunpowderCount}/{getRequiredMaterialCount(5)})
                       </span>
                     </div>
                   </div>
@@ -2158,12 +2363,12 @@ export const TownView: React.FC<TownViewProps> = ({
                       <span>Requires:</span>
                       <span
                         className={
-                          glassScopeCount >= 3
+                          glassScopeCount >= getRequiredMaterialCount(3)
                             ? "text-green-400"
                             : "text-red-400"
                         }
                       >
-                        3x Lens ({glassScopeCount}/3)
+                        {getRequiredMaterialCount(3)}x Lens ({glassScopeCount}/{getRequiredMaterialCount(3)})
                       </span>
                     </div>
                   </div>
@@ -2195,12 +2400,12 @@ export const TownView: React.FC<TownViewProps> = ({
                       <span>Requires:</span>
                       <span
                         className={
-                          safeSpringsCount >= 3
+                          safeSpringsCount >= getRequiredMaterialCount(3)
                             ? "text-green-400"
                             : "text-red-400"
                         }
                       >
-                        3x Spring ({safeSpringsCount}/3)
+                        {getRequiredMaterialCount(3)}x Spring ({safeSpringsCount}/{getRequiredMaterialCount(3)})
                       </span>
                     </div>
                   </div>
@@ -2230,12 +2435,12 @@ export const TownView: React.FC<TownViewProps> = ({
                       <span>Requires:</span>
                       <span
                         className={
-                          safeSpringsCount >= 4
+                          safeSpringsCount >= getRequiredMaterialCount(4)
                             ? "text-green-400"
                             : "text-red-400"
                         }
                       >
-                        4x Spring ({safeSpringsCount}/4)
+                        {getRequiredMaterialCount(4)}x Spring ({safeSpringsCount}/{getRequiredMaterialCount(4)})
                       </span>
                     </div>
                   </div>
@@ -2269,12 +2474,12 @@ export const TownView: React.FC<TownViewProps> = ({
                         <span>Requires:</span>
                         <span
                           className={
-                            gunpowderCount >= 5
+                            gunpowderCount >= getRequiredMaterialCount(5)
                               ? "text-green-400"
                               : "text-red-400"
                           }
                         >
-                          5x Powder Jar ({gunpowderCount}/5)
+                          {getRequiredMaterialCount(5)}x Powder Jar ({gunpowderCount}/{getRequiredMaterialCount(5)})
                         </span>
                       </div>
                     </div>
@@ -2307,22 +2512,22 @@ export const TownView: React.FC<TownViewProps> = ({
                         <span>Requires:</span>
                         <span
                           className={
-                            gunpowderCount >= 6
+                            gunpowderCount >= getRequiredMaterialCount(6)
                               ? "text-green-400"
                               : "text-red-400"
                           }
                         >
-                          6x Powder Jar ({gunpowderCount}/6)
+                          {getRequiredMaterialCount(6)}x Powder Jar ({gunpowderCount}/{getRequiredMaterialCount(6)})
                         </span>{" "}
                         •
                         <span
                           className={
-                            safeSpringsCount >= 4
+                            safeSpringsCount >= getRequiredMaterialCount(4)
                               ? "text-green-400"
                               : "text-red-400"
                           }
                         >
-                          4x Steel Springs ({safeSpringsCount}/4)
+                          {getRequiredMaterialCount(4)}x Steel Springs ({safeSpringsCount}/{getRequiredMaterialCount(4)})
                         </span>
                       </div>
                     </div>
@@ -2459,19 +2664,19 @@ export const TownView: React.FC<TownViewProps> = ({
             </div>
           )}
 
-          {/* TAB 5: SHERIFF'S OFFICE */}
+          {/* TAB 5: SHERIFF'S OFFICE / BANDIT BOSS */}
           {activeTab === "sheriff" && (
             <div className="space-y-4 flex-1">
               <div className="bg-[#dfd4bd] border border-[#bfae96] p-4 rounded-sm">
                 <div className="flex items-center gap-2 mb-4">
                   <ShieldAlert className="text-[#8c6b0c]" size={20} />
                   <h3 className="text-[#8c6b0c] font-serif font-bold text-sm uppercase tracking-widest">
-                    Sheriff's Office
+                    {labelSheriff}
                   </h3>
                 </div>
 
                 {/* Faction-specific interactions */}
-                {factionType === "lawmen" && repValue < 0 && (
+                {factionType === "lawmen" && repValue < 0 && !hasBanditBoss && (
                   <div className="mb-4">
                     <button
                       onClick={() => {
@@ -2500,15 +2705,45 @@ export const TownView: React.FC<TownViewProps> = ({
                   </div>
                 )}
 
-                {factionType === "lawmen" && (
+                {hasBanditBoss && repValue < 0 && (
+                  <div className="mb-4">
+                    <button
+                      onClick={() => {
+                        if (player.gold >= 50) {
+                          onUpdatePlayer((p) => ({
+                            ...p,
+                            gold: p.gold - 50,
+                            factionReputation: {
+                              ...p.factionReputation,
+                              outlaws: Math.min(
+                                0,
+                                (p.factionReputation?.outlaws || 0) + 15,
+                              ),
+                            },
+                          }));
+                          addLogMessage(
+                            `💸 Bribed Boss! Paid $50 to get back in the gang's good graces.`,
+                            "reputation",
+                          );
+                        }
+                      }}
+                      className="w-full py-2 bg-[#2d1e1e] hover:bg-[#3d1e1e] border border-red-500/50 text-red-200 font-bold text-xs font-serif uppercase tracking-wider rounded transition-colors"
+                    >
+                      🤝 Bribe Boss for Forgiveness ($50)
+                    </button>
+                  </div>
+                )}
+
+
+                {!hasBanditBoss && factionType === "lawmen" && (
                   <div className="mb-6 pb-6 border-b border-[#bfae96]/60">
                     <button
                       onClick={() =>
-                        onStartCombat("bounty", 0.8, null, "sheriff_garrett")
+                        onStartCombat("bounty", 0.8, null, "sheriff_garrett", undefined, location.leaderName)
                       }
                       className="w-full py-2 bg-[#301010] hover:bg-red-950 border border-red-950 text-red-400 font-bold text-[10px] font-mono uppercase tracking-widest rounded transition-colors"
                     >
-                      ⚔️ Provoke Sheriff to a Duel
+                      ⚔️ Provoke {location.leaderName || "Sheriff"} to a Duel
                     </button>
                     <p className="text-[10px] text-[#664d36] mt-2 font-sans italic text-center">
                       (Deadly) Challenging the law puts you in a high stakes
@@ -2517,21 +2752,38 @@ export const TownView: React.FC<TownViewProps> = ({
                   </div>
                 )}
 
+                {hasBanditBoss && (
+                  <div className="mb-6 pb-6 border-b border-[#bfae96]/60">
+                    <button
+                      onClick={() =>
+                        onStartCombat("bounty", 0.8, null, "bandit_boss", undefined, location.leaderName)
+                      }
+                      className="w-full py-2 bg-[#301010] hover:bg-red-950 border border-red-950 text-red-400 font-bold text-[10px] font-mono uppercase tracking-widest rounded transition-colors"
+                    >
+                      ⚔️ Provoke {location.leaderName || "Bandit Boss"} to a Duel
+                    </button>
+                    <p className="text-[10px] text-[#664d36] mt-2 font-sans italic text-center">
+                      (Deadly) Challenging the boss puts you in a high stakes
+                      tactical duel!
+                    </p>
+                  </div>
+                )}
+
+
                 {/* Prisoner Delivery Ward */}
                 <div
                   id="prisoner-delivery-panel"
                   className="bg-[#e8dec7] border-l-4 border-[#e8b923] p-3.5 rounded-sm space-y-2 border border-[#bfae96]/30"
                 >
                   <span className="font-serif font-bold text-[#8c6b0c] text-xs block uppercase tracking-wider">
-                    👮 Bounty Custody Desk
+                    {hasBanditBoss ? "⛓️ Ransom Exchange Desk" : "👮 Bounty Custody Desk"}
                   </span>
                   {player.inventory.some((item) =>
                     item.id.startsWith("captured_"),
                   ) ? (
                     <>
                       <p className="text-[10px] text-[#4a3928] font-sans">
-                        You have secured handcuffed outlaws in your saddlebags
-                        transport. Turn them over to the law for reward coin!
+                        {hasBanditBoss ? "You have captured targets. The boss is willing to pay ransom for them." : "You have secured handcuffed outlaws in your saddlebags transport. Turn them over to the law for reward coin!"}
                       </p>
                       <div className="space-y-1.5 pt-1">
                         {player.inventory
@@ -2556,7 +2808,7 @@ export const TownView: React.FC<TownViewProps> = ({
                                 }
                                 className="py-1 px-3 bg-[#e8b923] hover:bg-[#ffcf33] text-[#1a130f] rounded-sm font-serif font-extrabold text-[10px] uppercase cursor-pointer transition-colors"
                               >
-                                Collect Bounty (${item.value})
+                                {hasBanditBoss ? `Collect Ransom ($${item.value})` : `Collect Bounty ($${item.value})`}
                               </button>
                             </div>
                           ))}
@@ -2564,8 +2816,7 @@ export const TownView: React.FC<TownViewProps> = ({
                     </>
                   ) : (
                     <p className="text-[10px] text-[#664d36] font-sans italic py-2">
-                      No captured outlaws to turn in right now. Check the Town
-                      Square for Wanted Posters.
+                      {hasBanditBoss ? "No captured targets to ransom right now." : "No captured outlaws to turn in right now. Check the Town Square for Wanted Posters."}
                     </p>
                   )}
                 </div>
@@ -2749,6 +3000,8 @@ export const TownView: React.FC<TownViewProps> = ({
                     good.id,
                     good.basePrice,
                     location,
+                    player,
+                    tradeModal.action === "sell",
                   );
                   const townStock =
                     location.economyProfile?.localInventory[good.id] || 0;

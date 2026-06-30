@@ -8,7 +8,8 @@ export type LocationType =
   | "mine"
   | "ranch"
   | "cavalry_fort"
-  | "ephemeral_stash";
+  | "ephemeral_stash"
+  | "native_settlement";
 
 export interface Weapon {
   name: string;
@@ -102,7 +103,7 @@ export interface InjurySystem {
 export interface PosseMember {
   id: string;
   name: string;
-  role: "Gunslinger" | "Scout" | "Medic" | "Bodyguard" | "Bounty Hunter";
+  role: "Gunslinger" | "Scout" | "Medic" | "Bodyguard" | "Bounty Hunter" | "Trade Guard";
   hp: number;
   maxHp: number;
   dmg: number;
@@ -162,6 +163,15 @@ export interface SettlementEconomyProfile {
   availableCarriageForSale: CarriageTier | null;
 }
 
+export interface MarketBulletin {
+  locationId: string;
+  locationName: string;
+  itemId: string;
+  itemName: string;
+  priceMultiplier: number;
+  message: string;
+}
+
 export interface Player {
   appearance?: {
     gender: "male" | "female";
@@ -208,6 +218,22 @@ export interface Player {
   reloadSkill?: number;
   horsemanship?: number;
   silenceSkill?: number;
+  scoutingSkill?: number;
+  scoutingMastery?: number;
+  barterSkill?: number;
+  medicineSkill?: number;
+  pistolSkillLevel?: number;
+  rifleSkillLevel?: number;
+  reloadSkillLevel?: number;
+  horsemanshipLevel?: number;
+  silenceSkillLevel?: number;
+  barterSkillLevel?: number;
+  logisticsSkillLevel?: number;
+  appraisalSkillLevel?: number;
+  salvageSkillLevel?: number;
+  gunsmithSkillLevel?: number;
+  medicineSkillLevel?: number;
+  skillPoints?: number;
   bankBalance?: number;
   stats: {
     duelsWon: number;
@@ -218,6 +244,10 @@ export interface Player {
   };
   injuries?: InjurySystem;
   acceptedQuests?: Mission[];
+  journalEntries?: { id: string; date: string; title: string; text: string }[];
+  difficulty?: "normal" | "difficult";
+  ammoScarcity?: boolean;
+  activeMarketBulletin?: MarketBulletin | null;
 }
 
 export interface Mission {
@@ -233,7 +263,9 @@ export interface Mission {
     | "story_investigation"
     | "story_delivery"
     | "story_heist"
-    | "story_exploration";
+    | "story_exploration"
+    | "myth"
+    | "diplomacy";
   targetName: string;
   rewardGold: number;
   rewardXp: number;
@@ -244,6 +276,8 @@ export interface Mission {
   targetLocationId: string;
   isStoryline?: boolean;
   nextQuestTemplateId?: string; // used to spawn the next part of the story
+  targetLevel?: number;
+  difficulty?: number;
 
   // NEW INVESTIGATION & TWIST MECHANICS
   hiddenTargetHex?: number[]; // [x, y]
@@ -260,6 +294,13 @@ export interface Mission {
     | "ALLIED_WITH_TARGET"
     | "COMPLETED_BOUNTY"
     | "COMPLETED_BETRAYAL";
+
+  // MULTI-STAGE TRACKING
+  stage?: number;
+  maxStages?: number;
+  stageTargets?: string[]; // Array of locationIds for successive stages
+  stageInstructions?: string[]; // Custom instructions/details for each stage
+  clueItemNeeded?: string;
 }
 
 export interface ShopItem {
@@ -299,6 +340,7 @@ export interface Location {
   prosperity?: number; // 0 to 100
   economyProfile?: SettlementEconomyProfile;
   controllingFaction?: "lawmen" | "outlaws" | "tribes" | "neutral";
+  leaderName?: string;
   expiresAtTime?: number;
   isHidden?: boolean;
 }
@@ -342,6 +384,7 @@ export interface GridCell {
 export interface CombatActor {
   id: string;
   name: string;
+  level?: number;
   type:
     | "player"
     | "posse"
@@ -387,3 +430,24 @@ export interface LogMessage {
   type: "system" | "combat" | "loot" | "reputation" | "travel" | "danger";
   timestamp: string;
 }
+
+export interface OverlandActor {
+  id: string;
+  name: string;
+  type: "bounty_hunter" | "bandit" | "trader" | "native";
+  x: number;
+  y: number;
+  speed: number;
+  state: "patrolling" | "hunting" | "wandering" | "fleeing";
+  targetX?: number;
+  targetY?: number;
+  health: number;
+  maxHealth: number;
+  bountyTargetPrice?: number;
+  tradeInventory?: { itemId: string; quantity: number; priceMultiplier: number }[];
+  avatarIcon: string;
+  description: string;
+  targetLocationId?: string;
+  isDefeated?: boolean;
+}
+

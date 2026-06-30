@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Location, Player, LocationType } from "../types";
+import { Location, Player, LocationType, OverlandActor } from "../types";
+import { tickOverlandActors, getActorDialogue } from "../utils/overlandActors";
+import { TRADE_GOODS } from "../utils/trade";
 import {
   distance,
   generateChunkLocations,
@@ -122,6 +124,8 @@ export const getZoneAt = (
 
 interface OverlandMapProps {
   locations: Location[];
+  overlandActors?: OverlandActor[];
+  setOverlandActors?: React.Dispatch<React.SetStateAction<OverlandActor[]>>;
   currentLocationId: string;
   player: Player;
   onTravel: (targetLocationId: string, method: "horse" | "train") => void;
@@ -160,12 +164,16 @@ interface OverlandMapProps {
       | "bounty",
     risk: number,
     mission?: any,
+    provokedNpcId?: string | null,
   ) => void;
   onConfrontBoss: (mission: any) => void;
+  onPlayerDeath?: (reason?: string) => void;
 }
 
 export const OverlandMap: React.FC<OverlandMapProps> = ({
   locations,
+  overlandActors = [],
+  setOverlandActors,
   currentLocationId,
   player,
   onTravel,
@@ -185,6 +193,7 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
   advanceGameTime,
   onStartCombat,
   onConfrontBoss,
+  onPlayerDeath,
 }) => {
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
     null,
@@ -195,6 +204,12 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
     null,
   );
   const autoTravelTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Overland Actor interaction state
+  const [activeOverlandActorId, setActiveOverlandActorId] = useState<string | null>(null);
+  const [activeActorDialogue, setActiveActorDialogue] = useState<{ text: string; options: { text: string; action: string }[] } | null>(null);
+  const [isTradingActor, setIsTradingActor] = useState(false);
+  const [rumorText, setRumorText] = useState<string | null>(null);
 
   const currentLocation =
     locations.find((loc) => loc.id === currentLocationId) || locations[0];
@@ -309,6 +324,21 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
       // Perk modifier
       if (isHardy) waterReq *= 0.7; // "Saves 30% water hydration"
 
+      // Level 1 Horsemanship: Saddle Bond (-15% hydration cost when riding)
+      if (prev.hasHorse && (prev.horsemanshipLevel || 0) >= 1) {
+        waterReq *= 0.85;
+      }
+
+      // Level 2 Scouting: Trailblazer (-25% desert hydration loss)
+      if (biome.id === "desert" && (prev.scoutingSkill || 0) >= 2) {
+        waterReq *= 0.75;
+      }
+
+      // Level 3 Field Medicine: Miracle Remedy (-30% overland travel hydration loss)
+      if ((prev.medicineSkillLevel || 0) >= 3) {
+        waterReq *= 0.70;
+      }
+
       nextHydration -= waterReq;
 
       // Auto-Drink from 'canteen' in inventory if dropping low
@@ -322,7 +352,13 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
           ...inventory[canteenIdx],
           count: inventory[canteenIdx].count - 1,
         };
-        nextHydration = Math.min(prev.maxHydration ?? 100, nextHydration + 25);
+        let swigRegen = 25;
+        if ((prev.medicineSkillLevel || 0) >= 3) {
+          swigRegen = 50; // Miracle Remedy: +100% rehydration
+        } else if ((prev.medicineSkillLevel || 0) >= 1) {
+          swigRegen = 37; // Poultice Preparation: +50% rehydration
+        }
+        nextHydration = Math.min(prev.maxHydration ?? 100, nextHydration + swigRegen);
 
         setTimeout(() => {
           addLogMessage(
@@ -376,9 +412,27 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         }
 
         if (nextHoursDehydrated >= 72) {
-          setTimeout(() => {
-            setShowStrangerModal(true);
-          }, 50);
+          const isDifficult = prev.difficulty === "difficult";
+          if (isDifficult) {
+            const roll = Math.random();
+            if (roll < 0.25) {
+              setTimeout(() => {
+                setShowStrangerModal(true);
+              }, 50);
+            } else {
+              setTimeout(() => {
+                if (onPlayerDeath) {
+                  onPlayerDeath(
+                    `💀 DEHYDRATION DEATH: After 3 days of severe dehydration in hardcore mode, no one came to rescue you. ${prev.name} collapsed in the baking sun and died of extreme thirst.`
+                  );
+                }
+              }, 50);
+            }
+          } else {
+            setTimeout(() => {
+              setShowStrangerModal(true);
+            }, 50);
+          }
         } else {
           const prevHourFloor = Math.floor(prev.hoursDehydrated || 0);
           const nextHourFloor = Math.floor(nextHoursDehydrated);
@@ -445,6 +499,10 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
       baseSpeed = player.hasHorse ? 1.6 : 0.8;
     }
 
+    if (player.hasHorse && (player.horsemanshipLevel || 0) >= 1) {
+      baseSpeed *= 1.25; // Saddle Bond +25% Speed
+    }
+
     // Dynamic and progressive dehydration penalty:
     // the longer the player is dehydrated, the more severe the effects get by every in game hour.
     // after 3 days (72 hours), movement speed is 0.
@@ -497,6 +555,157 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
     );
   };
 
+  const handleActorOptionClick = (actor: OverlandActor, action: string) => {
+    if (action === "ask_info") {
+      let rumor = "";
+      if (actor.type === "bounty_hunter") {
+        const outlawsCount = locations.filter(l => l.controllingFaction === "outlaws").length;
+        rumor = `"I hear there are ${outlawsCount} sectors fully controlled by outlaw factions. The lawmen are offering extra coin for any outlaws cleared from those camps."`;
+      } else if (actor.type === "bandit") {
+        rumor = `"Psst... Word is there's a valuable stash hidden deep in one of the desert oasis sectors. Go find it if you got the spine."`;
+      } else if (actor.type === "trader") {
+        const randomGood = TRADE_GOODS[Math.floor(Math.random() * TRADE_GOODS.length)];
+        rumor = `"My trading ledger says they're paying top dollar for ${randomGood.name} in Boomtown. If you can haul it, you'll make a tidy fortune."`;
+      } else if (actor.type === "native") {
+        rumor = `"Listen to the wind. In the River Valleys, water flows clean. Ford any river and you can refill your Water Canteens to full without spending a single copper."`;
+      }
+      setRumorText(rumor);
+    } else if (action === "ask_info_bandit") {
+      setRumorText(`"We outlaws don't give away secrets for free, but let's just say the cavalry fort is bristling with guns and ammunition. Sneak in at night if you dare."`);
+    } else if (action === "trade") {
+      setIsTradingActor(true);
+    } else if (action === "attack") {
+      setActiveOverlandActorId(null);
+      const risk = actor.type === "bandit" ? 0.7 : actor.type === "bounty_hunter" ? 0.8 : 0.45;
+      addLogMessage(`⚔️ AMBUSH: You provoked and attacked ${actor.name}! Prepare to fight!`, "danger");
+      onStartCombat("ambush", risk, { id: actor.id, targetName: actor.name, title: `Combat: ${actor.name}` }, actor.id);
+    } else if (action === "pay_bandit") {
+      if (player.gold >= 50) {
+        onUpdatePlayer(p => ({ ...p, gold: p.gold - 50 }));
+        addLogMessage(`💸 TOLL PAID: You paid $50 trail toll to ${actor.name}.`, "travel");
+        setActiveOverlandActorId(null);
+      } else {
+        addLogMessage(`📢 "You don't have enough gold!" snarls ${actor.name}. "Prepare to bleed!"`, "danger");
+        setActiveOverlandActorId(null);
+        onStartCombat("ambush", 0.7, { id: actor.id, targetName: actor.name, title: `Combat: ${actor.name}` }, actor.id);
+      }
+    } else if (action === "bribe") {
+      const bribeAmount = Math.round((player.bounty || 50) * 1.5);
+      if (player.gold >= bribeAmount) {
+        onUpdatePlayer(p => ({ ...p, gold: p.gold - bribeAmount, bounty: 0 }));
+        addLogMessage(`💸 BRIBE ACCEPTED: You paid ${actor.name} $${bribeAmount} gold to shred your wanted posters.`, "system");
+        setActiveOverlandActorId(null);
+      } else {
+        addLogMessage(`📢 "I ain't cheap, Stranger!" says Silas. "Face the law!"`, "danger");
+      }
+    } else if (action === "surrender") {
+      const goldLost = Math.floor(player.gold * 0.5);
+      onUpdatePlayer(p => ({
+        ...p,
+        gold: player.gold - goldLost,
+        bounty: 0,
+        hp: p.maxHp,
+      }));
+      advanceGameTime(24);
+      addLogMessage(`⚖️ ARRESTED: You surrendered to the Law. You spent 24 hours in jail, paid $${goldLost} in court fines, and your bounty was cleared.`, "reputation");
+      
+      const lawTown = locations.find(l => l.type === "boomtown" || l.type === "railway_hub") || locations[0];
+      setPlayerX(lawTown.x);
+      setPlayerY(lawTown.y);
+      setCurrentLocationId(lawTown.id);
+      setActiveOverlandActorId(null);
+    }
+  };
+
+  const handleBuyActorItem = (actor: OverlandActor, itemId: string, cost: number) => {
+    if (player.gold < cost) {
+      addLogMessage("❌ Not enough gold to purchase this item.", "system");
+      return;
+    }
+
+    onUpdatePlayer((p) => {
+      const nextInv = [...p.inventory];
+      const exist = nextInv.find((i) => i.id === itemId);
+      if (exist) {
+        exist.count += 1;
+      } else {
+        const goodDef = TRADE_GOODS.find((g) => g.id === itemId);
+        nextInv.push({
+          id: itemId,
+          name: goodDef?.name || "Cargo Item",
+          type: "value",
+          value: goodDef?.basePrice || 10,
+          count: 1,
+        });
+      }
+      return {
+        ...p,
+        gold: p.gold - cost,
+        inventory: nextInv,
+      };
+    });
+
+    if (setOverlandActors) {
+      setOverlandActors((prev) =>
+        prev.map((a) => {
+          if (a.id !== actor.id) return a;
+          const nextInv = a.tradeInventory?.map((item) => {
+            if (item.itemId !== itemId) return item;
+            return { ...item, quantity: Math.max(0, item.quantity - 1) };
+          });
+          return { ...a, tradeInventory: nextInv };
+        })
+      );
+    }
+
+    addLogMessage(`🛒 BOUGHT: Purchased 1x of trade item from ${actor.name} for $${cost} gold.`, "loot");
+  };
+
+  const handleSellActorItem = (actor: OverlandActor, itemId: string, payout: number) => {
+    let hasItem = false;
+    onUpdatePlayer((p) => {
+      const nextInv = [...p.inventory];
+      const existIdx = nextInv.findIndex((i) => i.id === itemId);
+      if (existIdx !== -1) {
+        hasItem = true;
+        nextInv[existIdx].count -= 1;
+        if (nextInv[existIdx].count <= 0) {
+          nextInv.splice(existIdx, 1);
+        }
+      }
+      if (!hasItem) return p;
+
+      return {
+        ...p,
+        gold: p.gold + payout,
+        inventory: nextInv,
+      };
+    });
+
+    if (!hasItem) {
+      addLogMessage("❌ You do not possess any of this item to sell.", "system");
+      return;
+    }
+
+    if (setOverlandActors) {
+      setOverlandActors((prev) =>
+        prev.map((a) => {
+          if (a.id !== actor.id) return a;
+          const nextInv = a.tradeInventory ? [...a.tradeInventory] : [];
+          const existIdx = nextInv.findIndex((item) => item.itemId === itemId);
+          if (existIdx !== -1) {
+            nextInv[existIdx].quantity += 1;
+          } else {
+            nextInv.push({ itemId, quantity: 1, priceMultiplier: 1.0 });
+          }
+          return { ...a, tradeInventory: nextInv };
+        })
+      );
+    }
+
+    addLogMessage(`🛒 SOLD: Sold 1x of trade item to ${actor.name} for $${payout} gold.`, "loot");
+  };
+
   const processOverlandStep = (
     prevX: number,
     prevY: number,
@@ -541,8 +750,15 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         if (tick >= totalTicks) {
           clearInterval(fastForwardInterval);
           setShowCampFire(false);
-          let ambushChance = 0.1;
-          if ((player.hydration ?? 100) <= 0) ambushChance += 0.2; // increased ambush chance due to exhaustion
+          
+          const startingTown = locations && locations.length > 0 ? locations[0] : null;
+          const isNearStartingTown = startingTown 
+            ? Math.hypot(playerX - startingTown.x, playerY - startingTown.y) < 25.0
+            : false;
+
+          let ambushChance = 0.05; // 5% default chance
+          if ((player.hydration ?? 100) <= 0) ambushChance = 0.10; // max 10% when dehydrated/exhausted
+          if (isNearStartingTown) ambushChance = 0.0; // absolutely no ambush in starting safe zone
 
           if (Math.random() < ambushChance) {
             setShowCampFire(false);
@@ -553,12 +769,18 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
             onStartCombat("camp_ambush", 0.65);
           } else {
             if ((player.hydration ?? 100) > 0) {
+              let campHeal = 20;
+              if ((player.medicineSkillLevel || 0) >= 3) {
+                campHeal = 40; // Miracle Remedy: +100% healing
+              } else if ((player.medicineSkillLevel || 0) >= 1) {
+                campHeal = 30; // Poultice Preparation: +50% healing
+              }
               onUpdatePlayer((p) => ({
                 ...p,
-                hp: Math.min(p.maxHp, p.hp + 20),
+                hp: Math.min(p.maxHp, p.hp + campHeal),
               }));
               addLogMessage(
-                `⛺ CAMPED SAFELY: You safely rested until ${shouldRestNightTravel ? "dusk" : "dawn"} (+20 HP).`,
+                `⛺ CAMPED SAFELY: You safely rested until ${shouldRestNightTravel ? "dusk" : "dawn"} (+${campHeal} HP).${(player.medicineSkillLevel || 0) >= 1 ? " (Field Medicine Bonus!)" : ""}`,
                 "system",
               );
             } else {
@@ -608,6 +830,26 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
 
     advanceGameTime(player.hasHorse ? 0.3 : 0.6);
 
+    // Tick the dynamic overland NPCs
+    if (setOverlandActors && overlandActors.length > 0) {
+      const { updatedActors, logs } = tickOverlandActors(
+        overlandActors,
+        nextX,
+        nextY,
+        player.bounty || 0,
+        player.reputation || 0,
+        locations,
+        stepHours
+      );
+      setOverlandActors(updatedActors);
+      logs.forEach((log) => addLogMessage(log, "danger"));
+    }
+
+    const startingTown = locations && locations.length > 0 ? locations[0] : null;
+    const isNearStartingTown = startingTown 
+      ? Math.hypot(nextX - startingTown.x, nextY - startingTown.y) < 25.0
+      : false;
+
     let eventChance = 0.015;
     if (nextZone === "bandit") eventChance = 0.04;
     if (nextZone === "tribe") eventChance = 0.025;
@@ -632,9 +874,13 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
       biome.name.includes("Rocky") || biome.name.includes("Searing");
     if (isTreacherous) eventChance += 0.02;
 
+    if (isNearStartingTown) {
+      eventChance = 0.0; // 100% safe zone around starting town!
+    }
+
     // --- Nemesis Hunting Logic ---
     const activeNemeses = player.nemeses?.filter((n) => n.isHunting) || [];
-    if (activeNemeses.length > 0 && Math.random() < 0.03) {
+    if (activeNemeses.length > 0 && !isNearStartingTown && Math.random() < 0.03) {
       // 3% chance per step if hunted
       const nemesis =
         activeNemeses[Math.floor(Math.random() * activeNemeses.length)];
@@ -853,6 +1099,11 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         (travelByNight && !isNight && roll < 0.3);
       if (isNight && player.perks.includes("shadow"))
         isAmbush = isAmbush && Math.random() > 0.5;
+
+      // Level 3 Stealth & Silence: Ghost of the Badlands (lowers overland ambush frequency by 50%)
+      if ((player.silenceSkillLevel || 0) >= 3) {
+        isAmbush = isAmbush && Math.random() > 0.5;
+      }
 
       const isNightAttackOnNPC = travelByNight && isNight && roll < 0.2;
       const isInjury = !isRetaliation && isTreacherous && roll > 0.8;
@@ -1112,6 +1363,59 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
     showCampFire,
   ]);
 
+  const [lastInteractedActorId, setLastInteractedActorId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeOverlandActorId) return;
+
+    // Find closest non-defeated overland actor
+    const closestActor = overlandActors.find((actor) => {
+      const isDefeated = player.defeatedNpcs?.includes(actor.id) || actor.isDefeated;
+      if (isDefeated) return false;
+      const dist = Math.hypot(playerX - actor.x, playerY - actor.y);
+      return dist <= 1.6;
+    });
+
+    if (closestActor) {
+      if (closestActor.id !== lastInteractedActorId) {
+        setActiveOverlandActorId(closestActor.id);
+        const dialogue = getActorDialogue(closestActor, player.bounty || 0, player.reputation || 0);
+        setActiveActorDialogue(dialogue);
+        setIsTradingActor(false);
+        setRumorText(null);
+        setLastInteractedActorId(closestActor.id);
+
+        if (isAutoTraveling) {
+          setIsAutoTraveling(false);
+          if (autoTravelTimerRef.current) {
+            clearTimeout(autoTravelTimerRef.current);
+            autoTravelTimerRef.current = null;
+          }
+          addLogMessage(`⚠️ ENCOUNTER: Halted travel. You crossed paths with ${closestActor.name}!`, "system");
+        } else {
+          addLogMessage(`⚠️ ENCOUNTER: You crossed paths with ${closestActor.name}!`, "system");
+        }
+      }
+    } else {
+      const anyClose = overlandActors.some((actor) => {
+        const dist = Math.hypot(playerX - actor.x, playerY - actor.y);
+        return dist <= 2.2;
+      });
+      if (!anyClose) {
+        setLastInteractedActorId(null);
+      }
+    }
+  }, [
+    playerX,
+    playerY,
+    overlandActors,
+    player.defeatedNpcs,
+    activeOverlandActorId,
+    lastInteractedActorId,
+    isAutoTraveling,
+    addLogMessage,
+  ]);
+
   // Calculate costs to current selected
   let travelDistance = 0;
   let trainTicketCost = 0;
@@ -1125,7 +1429,9 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
     if (currentLocation.hasTrain && selectedLocation.hasTrain) {
       worksWithTrain = true;
       trainTicketCost = Math.round(travelDistance * 1.5);
-      if (player.perks.includes("silver_tongue")) {
+      if ((player.appraisalSkillLevel || 0) >= 3) {
+        trainTicketCost = Math.round(trainTicketCost * 0.5); // Golden Tongue: -50% ticket cost
+      } else if (player.perks.includes("silver_tongue")) {
         trainTicketCost = Math.round(trainTicketCost * 0.8);
       }
     }
@@ -1179,6 +1485,10 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         return <span className="text-[#c4451a] font-extrabold text-sm">⚔</span>;
       case "ephemeral_stash":
         return <span className="text-[#8c6b0c] font-extrabold text-sm">✖</span>;
+      case "cavalry_fort":
+        return <span className="text-blue-800 font-extrabold text-sm">♜</span>;
+      case "native_settlement":
+        return <span className="text-teal-600 font-extrabold text-sm">⛺</span>;
       default:
         return <span className="text-[#3d2d21] font-extrabold text-sm">●</span>;
     }
@@ -1720,6 +2030,117 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
             return null;
           })}
 
+          {/* Overland Actors Overlay & Radar */}
+          {overlandActors.map((actor) => {
+            const isDefeated = player.defeatedNpcs?.includes(actor.id) || actor.isDefeated;
+            if (isDefeated) return null;
+
+            const dx = Math.abs(actor.x - playerX);
+            const dy = Math.abs(actor.y - playerY);
+
+            // Scouting skill visibility limits
+            const scoutingLvl = player.scoutingSkill || 0;
+            let maxIconDist = 2; // default: 4x4 radius (dx <= 2, dy <= 2)
+            let maxInfoDist = -1; // default: none (no information)
+
+            if (scoutingLvl === 1) {
+              maxIconDist = 3; // 6x6 radius (dx <= 3, dy <= 3)
+              maxInfoDist = 2; // 4x4 radius (dx <= 2, dy <= 2)
+            } else if (scoutingLvl === 2) {
+              maxIconDist = 4; // 8x8 radius (dx <= 4, dy <= 4)
+              maxInfoDist = 3; // 6x6 radius (dx <= 3, dy <= 3)
+            } else if (scoutingLvl >= 3) {
+              maxIconDist = 6; // 12x12 radius (dx <= 6, dy <= 6)
+              maxInfoDist = 4; // 8x8 radius (dx <= 4, dy <= 4)
+            }
+
+            const inIconArea = dx <= maxIconDist && dy <= maxIconDist;
+            if (!inIconArea) return null;
+
+            const isClose = maxInfoDist >= 0 && dx <= maxInfoDist && dy <= maxInfoDist;
+
+            const coords = getViewportCoords(actor.x, actor.y);
+            const dist = Math.hypot(playerX - actor.x, playerY - actor.y);
+
+            // Define borders & styles based on actor archetype
+            let ringColor = "border-amber-600 bg-[#dfd4bd] text-[#543d2b]";
+            let label = "Traveler";
+            if (actor.type === "bounty_hunter") {
+              ringColor = "border-yellow-600 bg-yellow-950/20 text-yellow-100 shadow-[0_0_6px_rgba(234,179,8,0.3)] animate-pulse";
+              label = "Bounty Hunter";
+            } else if (actor.type === "bandit") {
+              ringColor = "border-red-650 bg-red-950/20 text-red-100 shadow-[0_0_6px_rgba(220,38,38,0.35)]";
+              label = "Bandit Outlaw";
+            } else if (actor.type === "trader") {
+              ringColor = "border-emerald-600 bg-emerald-950/20 text-emerald-100";
+              label = "Frontier Merchant";
+            } else if (actor.type === "native") {
+              ringColor = "border-teal-650 bg-teal-950/20 text-teal-100";
+              label = "Native Tribal Scout";
+            }
+
+            return (
+              <div
+                key={`actor-${actor.id}`}
+                className="absolute transform -translate-x-1/2 -translate-y-1/2 z-30 group"
+                style={{ left: `${coords.x}%`, top: `${coords.y}%` }}
+              >
+                {/* Proximity Ring */}
+                {isClose && (
+                  <div className="absolute inset-0 -m-1.5 rounded-full border border-dashed border-amber-500/50 animate-spin-slow pointer-events-none" />
+                )}
+
+                <button
+                  onClick={() => {
+                    if (isClose) {
+                      setActiveOverlandActorId(actor.id);
+                      const dialogue = getActorDialogue(actor, player.bounty || 0, player.reputation || 0);
+                      setActiveActorDialogue(dialogue);
+                      setIsTradingActor(false);
+                      setRumorText(null);
+                    } else {
+                      addLogMessage(`📢 That traveler is too far away. Ride closer to identify and engage them!`, "system");
+                    }
+                  }}
+                  className={`w-7.5 h-7.5 rounded-full flex items-center justify-center border-2 font-serif text-sm transition-transform duration-200 active:scale-95 ${ringColor} ${
+                    isClose ? "cursor-pointer hover:scale-110" : "cursor-default opacity-90"
+                  }`}
+                  title={isClose ? `${actor.name} (${label})` : "Distant Traveler"}
+                >
+                  {actor.avatarIcon}
+                </button>
+
+                {/* Actor Hover Tooltip - Only visible when inside the 4x4 info area */}
+                {isClose && (
+                  <div className="absolute left-1/2 bottom-full transform -translate-x-1/2 mb-2 w-48 bg-[#1f1712] border border-[#bfae96]/40 text-[#eae0cc] text-[10px] p-2.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 text-left leading-normal font-sans space-y-1">
+                    <div className="flex justify-between items-center border-b border-[#bfae96]/20 pb-1">
+                      <span className="font-serif font-bold text-amber-200">{actor.name}</span>
+                      <span className="text-[8px] font-mono px-1 py-0.2 bg-[#33251c] text-amber-100 rounded">
+                        {label}
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-amber-100/85 font-serif italic">{actor.description}</p>
+                    <div className="border-t border-[#bfae96]/10 pt-1 flex justify-between text-[8px] font-mono text-[#bfae96]">
+                      <span>Status:</span>
+                      <span className={actor.state === "hunting" ? "text-red-400 font-bold" : "text-amber-100"}>
+                        {actor.state === "hunting" ? "🏹 Hunt Mode" : actor.state === "patrolling" ? "🏇 Patrol" : "🌲 Wandering"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[8px] font-mono text-[#bfae96]">
+                      <span>Distance:</span>
+                      <span className="text-emerald-400 font-bold">
+                        {Math.round(dist)} units (Close)
+                      </span>
+                    </div>
+                    <p className="text-[7.5px] font-mono text-center text-amber-300 border-t border-[#bfae96]/10 pt-1 leading-none">
+                      ✦ CLICK TO INTERACT ✦
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
           {/* Location buttons overlay */}
           {locations.map((loc) => {
             const coords = getViewportCoords(loc.x, loc.y);
@@ -1884,6 +2305,11 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
                 </div>
 
                 <div className="bg-[#1e110a] border border-[#c59b27]/30 p-2.5 rounded-sm space-y-1.5 text-left font-mono text-[9px] text-amber-200">
+                  {player.difficulty === "difficult" && (
+                    <div className="text-[9px] text-red-400 font-bold border-b border-[#c59b27]/25 pb-1 animate-pulse">
+                      ⚡ HARDCORE LUCK: You beat the 25% survival odds!
+                    </div>
+                  )}
                   <div className="flex justify-between items-center text-emerald-400 font-bold border-b border-[#c59b27]/25 pb-1">
                     <span>❤️ SURVIVED:</span>
                     <span>No longer Dehydrated</span>
@@ -1909,6 +2335,177 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
               </div>
             </div>
           )}
+
+          {/* Dynamic Overland NPC Interaction Modal */}
+          {activeOverlandActorId &&
+            (() => {
+              const actor = overlandActors.find((a) => a.id === activeOverlandActorId);
+              if (!actor) return null;
+
+              return (
+                <div
+                  id="overland-npc-dialog"
+                  className="absolute inset-0 z-[95] bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto pointer-events-auto"
+                >
+                  <div className="bg-[#2a1a0f] border-4 border-[#8c6b0c] text-[#f4ead5] rounded shadow-2xl max-w-xl w-full p-5 space-y-4 font-serif relative">
+                    {/* Header Banner */}
+                    <div className="text-center border-b border-[#8c6b0c]/40 pb-3">
+                      <div className="text-4xl filter drop-shadow-md mb-1">{actor.avatarIcon}</div>
+                      <h3 className="text-lg font-bold uppercase tracking-widest text-amber-400">
+                        {actor.name}
+                      </h3>
+                      <p className="text-[9px] uppercase font-mono tracking-widest text-amber-200/60 mt-0.5">
+                        {actor.type.replace("_", " ")} • Encounter on the Trail
+                      </p>
+                    </div>
+
+                    {!isTradingActor ? (
+                      /* Dialogue Mode */
+                      <div className="space-y-4">
+                        <div className="bg-[#1f120a] border border-[#8c6b0c]/30 p-4 rounded-sm text-center">
+                          <p className="text-sm leading-relaxed text-[#f7eada] font-serif italic">
+                            {activeActorDialogue?.text || `"Howdy, Traveler."`}
+                          </p>
+                        </div>
+
+                        {rumorText && (
+                          <div className="bg-[#301c10] border-l-4 border-amber-500 p-3 text-xs leading-relaxed font-sans text-amber-100/90 rounded-sm">
+                            <span className="font-serif font-bold text-amber-400 block uppercase tracking-wide text-[9px] mb-1">
+                              💡 Rumor & Travel Tip
+                            </span>
+                            {rumorText}
+                          </div>
+                        )}
+
+                        {/* Options */}
+                        <div className="flex flex-col gap-2 pt-2">
+                          {activeActorDialogue?.options.map((opt, idx) => (
+                            <button
+                              key={`dialog-opt-${idx}`}
+                              onClick={() => handleActorOptionClick(actor, opt.action)}
+                              className="w-full text-left py-2 px-3 border border-[#8c6b0c]/40 rounded bg-[#352214] hover:bg-amber-950 hover:border-amber-500 text-amber-100 hover:text-white transition-all text-xs font-serif flex justify-between items-center cursor-pointer"
+                            >
+                              <span>{opt.text}</span>
+                              <span className="text-amber-500 font-bold font-mono">✦</span>
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => {
+                              setActiveOverlandActorId(null);
+                              setIsTradingActor(false);
+                              setRumorText(null);
+                            }}
+                            className="w-full text-center py-2.5 bg-zinc-900 border border-zinc-700 text-zinc-400 hover:text-white font-sans font-bold uppercase tracking-widest text-[9px] transition-colors rounded cursor-pointer mt-1"
+                          >
+                            Close / Ride Away
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Barter/Trading Mode */
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center bg-[#1f120a] p-2.5 rounded border border-[#8c6b0c]/20">
+                          <span className="text-xs text-amber-100 font-mono">Your Coin Purse:</span>
+                          <span className="text-sm font-bold text-yellow-400 font-mono flex items-center gap-1">
+                            💰 ${player.gold} Gold
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Buy Column */}
+                          <div className="space-y-2">
+                            <h4 className="text-[10px] uppercase font-mono tracking-wider text-amber-300 border-b border-[#8c6b0c]/20 pb-1">
+                              Available to Buy
+                            </h4>
+                            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                              {actor.tradeInventory && actor.tradeInventory.length > 0 ? (
+                                actor.tradeInventory.map((item) => {
+                                  const def = TRADE_GOODS.find((g) => g.id === item.itemId);
+                                  if (!def || item.quantity <= 0) return null;
+                                  const price = Math.round(def.basePrice * item.priceMultiplier);
+
+                                  return (
+                                    <div
+                                      key={`buy-${item.itemId}`}
+                                      className="bg-[#352214] border border-[#8c6b0c]/20 p-2 rounded flex flex-col justify-between text-left relative group/item"
+                                    >
+                                      <div className="flex justify-between items-start">
+                                        <span className="text-xs font-serif font-bold text-amber-100">{def.name}</span>
+                                        <span className="text-[9px] font-mono font-bold text-[#e0a924]">${price}</span>
+                                      </div>
+                                      <div className="flex justify-between items-center mt-1">
+                                        <span className="text-[8px] font-mono text-amber-200/50">Stock: {item.quantity}</span>
+                                        <button
+                                          onClick={() => handleBuyActorItem(actor, item.itemId, price)}
+                                          className="py-0.5 px-2 bg-yellow-900/40 hover:bg-yellow-800 text-yellow-300 font-sans uppercase font-bold text-[8px] rounded border border-yellow-750 cursor-pointer"
+                                        >
+                                          Buy Item
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <p className="text-[10px] text-[#eedec4]/50 italic text-center py-4">No goods remaining.</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Sell Column */}
+                          <div className="space-y-2">
+                            <h4 className="text-[10px] uppercase font-mono tracking-wider text-amber-300 border-b border-[#8c6b0c]/20 pb-1">
+                              Sell Your Cargo
+                            </h4>
+                            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                              {player.inventory && player.inventory.filter(i => i.type === "value" || i.id === "canned_beans" || i.id === "sarsaparilla" || i.id === "jackalope_horns" || i.id === "used_spittoons" || i.id === "questionable_salve" || i.id === "rattlesnake_boots" || i.id === "water_barrel" || i.id === "sweating_dynamite" || i.id === "snake_oil" || i.id === "moonshine").length > 0 ? (
+                                player.inventory
+                                  .filter(i => i.type === "value" || i.id === "canned_beans" || i.id === "sarsaparilla" || i.id === "jackalope_horns" || i.id === "used_spittoons" || i.id === "questionable_salve" || i.id === "rattlesnake_boots" || i.id === "water_barrel" || i.id === "sweating_dynamite" || i.id === "snake_oil" || i.id === "moonshine")
+                                  .map((item) => {
+                                    const def = TRADE_GOODS.find((g) => g.id === item.id);
+                                    const payout = def ? Math.round(def.basePrice * 0.75) : 5;
+
+                                    return (
+                                      <div
+                                        key={`sell-${item.id}`}
+                                        className="bg-[#352214] border border-[#8c6b0c]/20 p-2 rounded flex flex-col justify-between text-left"
+                                      >
+                                        <div className="flex justify-between items-start">
+                                          <span className="text-xs font-serif font-bold text-amber-100">{item.name}</span>
+                                          <span className="text-[9px] font-mono font-bold text-emerald-400">+${payout}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center mt-1">
+                                          <span className="text-[8px] font-mono text-amber-200/50">You own: {item.count}</span>
+                                          <button
+                                            onClick={() => handleSellActorItem(actor, item.id, payout)}
+                                            className="py-0.5 px-2 bg-emerald-900/40 hover:bg-emerald-800 text-emerald-300 font-sans uppercase font-bold text-[8px] rounded border border-emerald-750 cursor-pointer"
+                                          >
+                                            Sell Item
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                              ) : (
+                                <p className="text-[10px] text-[#eedec4]/50 italic text-center py-4">No trade items in inventory.</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            onClick={() => setIsTradingActor(false)}
+                            className="w-full text-center py-2 bg-amber-800/80 hover:bg-amber-700 border border-amber-600 text-amber-100 font-sans font-bold uppercase tracking-widest text-[9px] transition-colors rounded cursor-pointer"
+                          >
+                            Back to Conversation
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
         </div>
       </div>
 
@@ -1962,6 +2559,17 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
                 {getBiomeAt(playerX, playerY).desc}
               </span>
             </div>
+            <div className="flex justify-between text-[10px] font-mono text-[#4a3928]">
+              <span>Atmosphere:</span>
+              <span className="text-amber-800 font-bold capitalize">
+                {globalWeather}
+              </span>
+            </div>
+            {(player.scoutingSkill || 0) >= 3 && (
+              <div className="text-[9px] font-mono text-[#416827] bg-[#eef6eb] px-1.5 py-0.5 mt-1 border border-[#c3dfb8] rounded-sm flex items-center gap-1">
+                <span>🛰️ CARTOGRAPHER WARNING: Air pressure trends indicate stable {globalWeather} conditions.</span>
+              </div>
+            )}
             {getBiomeAt(playerX, playerY).name === "River Valley" && (
               <div className="flex justify-between items-center text-[10px] font-mono text-[#4a3928] border-t border-[#bfae96]/30 pt-2 mt-2">
                 <span>Fresh Water:</span>

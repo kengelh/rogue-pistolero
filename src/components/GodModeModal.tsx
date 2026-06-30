@@ -106,23 +106,23 @@ export const GodModeModal: React.FC<GodModeModalProps> = ({
   onForceTimeOfDay,
 }) => {
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-[#e8dec7] border-4 border-[#3d2d21] p-6 max-w-sm sm:max-w-md w-full rounded-sm shadow-2xl relative">
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-0 sm:p-4 z-50 backdrop-blur-sm">
+      <div className="bg-[#e8dec7] border-0 sm:border-4 border-[#3d2d21] p-4 sm:p-6 max-w-sm sm:max-w-md w-full h-full sm:h-auto max-h-screen sm:max-h-[90vh] sm:rounded-sm shadow-2xl relative flex flex-col overflow-hidden">
         <button
           onClick={onClose}
-          className="absolute top-2 right-2 text-[#3d2d21] hover:text-red-700 p-2"
+          className="absolute top-2 right-2 text-[#3d2d21] hover:text-red-700 p-2 z-10 cursor-pointer"
         >
-          <X size={24} />
+          <X size={20} />
         </button>
 
-        <div className="flex flex-col items-center gap-2 mb-6 pb-4 border-b-2 border-[#bfae96] text-center">
+        <div className="flex flex-col items-center gap-1.5 mb-4 pb-3 border-b-2 border-[#bfae96] text-center shrink-0">
           <ShieldAlert
-            size={48}
+            size={40}
             className={
               isActive ? "text-amber-500 animate-pulse" : "text-stone-500"
             }
           />
-          <h2 className="text-2xl font-black uppercase tracking-widest text-[#3d2d21]">
+          <h2 className="text-xl font-black uppercase tracking-widest text-[#3d2d21]">
             Dev Tool
           </h2>
           <p className="text-xs text-stone-600 font-serif leading-tight">
@@ -130,7 +130,7 @@ export const GodModeModal: React.FC<GodModeModalProps> = ({
           </p>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6 overflow-y-auto flex-1 pr-1 custom-scrollbar">
           <div className="bg-[#dcd1b9] p-4 rounded border-2 border-[#bfae96]">
             <div className="flex justify-between items-center">
               <div>
@@ -316,6 +316,16 @@ export const GodModeModal: React.FC<GodModeModalProps> = ({
               ))}
             </div>
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-[#3d2d21] p-2.5 sm:p-3 text-center border-t border-[#2d2119] flex justify-end items-center mt-3 shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 bg-[#e8b923] hover:bg-amber-500 text-stone-900 font-serif font-bold text-xs uppercase tracking-widest rounded-sm shadow cursor-pointer transition-all w-full"
+          >
+            Close Dev Tool
+          </button>
         </div>
       </div>
     </div>

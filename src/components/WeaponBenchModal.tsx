@@ -81,19 +81,19 @@ export const WeaponBenchModal: React.FC<WeaponBenchModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]">
-      <div className="bg-[#f4ead5] border-2 border-[#8a705a] rounded-md shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="bg-[#2d2119] text-[#e8b923] p-4 flex justify-between items-center border-b border-[#1a130f] shrink-0">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-0 sm:p-4 backdrop-blur-[2px]">
+      <div className="bg-[#f4ead5] border-0 sm:border-2 border-[#8a705a] sm:rounded-md shadow-2xl max-w-2xl w-full h-full sm:h-auto max-h-screen sm:max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="bg-[#2d2119] text-[#e8b923] p-3 sm:p-4 flex justify-between items-center border-b border-[#1a130f] shrink-0">
           <div>
-            <h2 className="text-xl font-black uppercase tracking-[0.15em] font-serif">Gunsmith & Maintenance</h2>
-            <p className="text-[10px] text-[#bfae96] font-sans font-normal mt-0.5">Attach and maintain weapon components to restore functionality.</p>
+            <h2 className="text-sm sm:text-xl font-black uppercase tracking-[0.15em] font-serif truncate">Gunsmith & Maintenance</h2>
+            <p className="text-[9px] sm:text-[10px] text-[#bfae96] font-sans font-normal mt-0.5 truncate max-w-[180px] sm:max-w-none">Attach and maintain weapon components to restore functionality.</p>
           </div>
-          <button onClick={onClose} className="text-[#e8b923] hover:text-white transition-colors cursor-pointer text-sm bg-white/10 px-3 py-1.5 rounded-sm">
+          <button onClick={onClose} className="text-[#e8b923] hover:text-white transition-colors cursor-pointer text-[10px] sm:text-sm bg-white/10 px-2 sm:px-3 py-1 sm:py-1.5 rounded-sm shrink-0">
             CLOSE (Esc)
           </button>
         </div>
 
-        <div className="p-4 overflow-y-auto flex-1 custom-scrollbar">
+        <div className="p-3 sm:p-4 overflow-y-auto flex-1 custom-scrollbar">
           <div className="mb-4 bg-[#dfd4bd] border border-[#bfae96] p-3 rounded-sm flex justify-between items-center shadow-sm">
              <div>
                 <span className="text-[10px] uppercase font-serif tracking-widest text-[#664d36] font-bold block mb-1">Active Weapon</span>
@@ -117,6 +117,16 @@ export const WeaponBenchModal: React.FC<WeaponBenchModalProps> = ({
              {renderSlot('action', 'Firing Action')}
              {renderSlot('stock', 'Stock & Grip')}
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-[#2d2119] p-2.5 sm:p-3 text-center border-t border-[#1a130f] flex justify-end items-center px-4 sm:px-6 shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 bg-[#e8b923] hover:bg-amber-500 text-stone-900 font-serif font-bold text-xs uppercase tracking-widest rounded-sm shadow cursor-pointer transition-all w-full sm:w-auto"
+          >
+            Done
+          </button>
         </div>
       </div>
     </div>

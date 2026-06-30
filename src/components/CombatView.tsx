@@ -65,19 +65,33 @@ interface CombatViewProps {
   currentLocation?: any;
   activeMissionTarget?: any;
   activeProvokedNpcId?: string | null;
+  activeProvokedNpcName?: string | null;
   forcedWeather?: string | null;
   forcedTimeOfDay?: "day" | "night" | null;
   onTriggerTip?: (id: string, title: string, desc: string) => void;
   gameTimeHour?: number;
+  standoffBonus?: {
+    surpriseTurns?: number;
+    enemyHpMultiplier?: number;
+    enemyCountReduction?: number;
+    enemyDmgMultiplier?: number;
+    bonusMessage?: string;
+  } | null;
+  standoffPenalty?: {
+    playerHpReduction?: number;
+    lostInitiative?: boolean;
+    enemyDamageBoost?: boolean;
+    bonusMessage?: string;
+  } | null;
 }
 
 // Helper to check item weight in bags
 const getItemWeight = (item: { id: string; name: string; type: string }) => {
   if (item.id === "whiskey") return 1.0;
   if (item.id === "elixir") return 1.0;
-  if (item.id === "ammo_pistol") return 0.1;
-  if (item.id === "ammo_rifle") return 0.15;
-  if (item.id === "ammo_shotgun") return 0.2;
+  if (item.id === "ammo_pistol" || item.id === "ammo_45_colt") return 0.1;
+  if (item.id === "ammo_rifle" || item.id === "ammo_44_40_winchester") return 0.15;
+  if (item.id === "ammo_shotgun" || item.id === "ammo_12_gauge") return 0.2;
   if (item.id === "ammo_box") return 3.0; // fallback
   if (item.id === "bandage") return 0.5;
   if (item.id === "gunpowder") return 1.5;
@@ -150,10 +164,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
   currentLocation,
   activeMissionTarget,
   activeProvokedNpcId,
+  activeProvokedNpcName,
   forcedWeather,
   forcedTimeOfDay,
   onTriggerTip,
   gameTimeHour = 12,
+  standoffBonus,
+  standoffPenalty,
 }) => {
   const [grid, setGrid] = useState<GridCell[]>([]);
   const [playerHp, setPlayerHp] = useState(player.hp);
@@ -162,10 +179,19 @@ export const CombatView: React.FC<CombatViewProps> = ({
   );
   const [playerClip, setPlayerClip] = useState(player.weapon.clip);
   const [playerReserveAmmo, setPlayerReserveAmmo] = useState(() => {
-    const ammoItemId = `ammo_${player.weapon.ammoType || "pistol"}`;
+    const ammoItemId = player.ammoScarcity
+      ? (player.weapon.ammoType === "rifle"
+          ? "ammo_44_40_winchester"
+          : player.weapon.ammoType === "shotgun"
+            ? "ammo_12_gauge"
+            : "ammo_45_colt")
+      : `ammo_${player.weapon.ammoType || "pistol"}`;
     const ammoItem = player.inventory.find((i) => i.id === ammoItemId);
     return ammoItem ? ammoItem.count : 0;
   });
+  const [playerShotsFired, setPlayerShotsFired] = useState(0);
+  const [combatCycleEvasionActive, setCombatCycleEvasionActive] = useState(false);
+  const [bulletStormActive, setBulletStormActive] = useState(false);
   const baseApFromLevel =
     Math.min(
       12,
@@ -187,7 +213,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
     apRef.current = nextAp;
     _setApRaw(nextAp);
   };
-  const [turn, setTurn] = useState<"player" | "enemy">("player");
+  const [turn, setTurn] = useState<"player" | "enemy">(
+    standoffPenalty?.lostInitiative ? "enemy" : "player"
+  );
+  const [activeSurpriseTurns, setActiveSurpriseTurns] = useState<number>(
+    standoffBonus?.surpriseTurns || 0
+  );
 
   // CLICK-EMPTY TRIGGER STATE
   const [logsVisible, setLogsVisible] = useState<boolean>(true);
@@ -1068,6 +1099,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
       }
     }
 
+    if (standoffBonus?.enemyCountReduction) {
+      numEnemies = Math.max(1, numEnemies - standoffBonus.enemyCountReduction);
+    }
+
     const prefixes = [
       "Slippery",
       "Deadeye",
@@ -1195,16 +1230,65 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
       let enemyType: CombatActor["type"] = "bandit";
       let enemyName = "";
-      let hp = 35 + Math.round(difficultyRisk * 45);
-      let dmg = 10 + Math.round(difficultyRisk * 15);
+      let enemyLevel = 1;
+      
+      const playerLvl = player.level || 1;
+      const isDifficult = player.difficulty === "difficult";
+
+      if (combatType === "bounty" && i === 0 && activeMissionTarget && activeMissionTarget.targetLevel) {
+        // Tie outlaw leader's level to the bounty mission target level
+        enemyLevel = activeMissionTarget.targetLevel;
+      } else if (!isDifficult) {
+        // Normal Mode (Forgiving)
+        if (playerLvl <= 10) {
+          // Gated: +/- 2 levels
+          const delta = Math.floor(Math.random() * 5) - 2; // -2 to +2
+          enemyLevel = Math.max(1, playerLvl + delta);
+        } else if (playerLvl <= 20) {
+          // Gated: +/- 5 levels
+          const delta = Math.floor(Math.random() * 11) - 5; // -5 to +5
+          enemyLevel = Math.max(1, playerLvl + delta);
+        } else {
+          // No restrictions after level 20
+          const delta = Math.floor(Math.random() * 17) - 8; // -8 to +8
+          enemyLevel = Math.max(1, playerLvl + delta + Math.round(difficultyRisk * 3));
+        }
+      } else {
+        // Difficult Mode (Hardcore)
+        if (playerLvl < 4) {
+          const delta = Math.floor(Math.random() * 5) - 2;
+          enemyLevel = Math.max(1, playerLvl + delta + 2); // 2 levels tougher
+        } else {
+          const delta = Math.floor(Math.random() * 11) - 5;
+          enemyLevel = Math.max(1, playerLvl + delta + Math.round(difficultyRisk * 3) + 3); // 3 levels tougher
+        }
+      }
+
+      // Level scaling factor
+      const levelFactor = 0.8 + (enemyLevel - 1) * 0.12;
+
+
+      let hp = Math.round((35 + Math.round(difficultyRisk * 45)) * levelFactor);
+      let dmg = Math.round((7 + Math.round(difficultyRisk * 12)) * levelFactor);
+
+      if (standoffBonus?.enemyHpMultiplier) {
+        hp = Math.round(hp * standoffBonus.enemyHpMultiplier);
+      }
+      if (standoffBonus?.enemyDmgMultiplier) {
+        dmg = Math.round(dmg * standoffBonus.enemyDmgMultiplier);
+      }
+      if (standoffPenalty?.enemyDamageBoost) {
+        dmg = Math.round(dmg * 1.25);
+      }
       let range = 4;
       let clip = 6;
-      let accuracy = 0.6 + difficultyRisk * 0.15;
+      let accuracy = Math.min(0.95, (0.6 + difficultyRisk * 0.15) * (0.85 + enemyLevel * 0.05));
       let chosenTrait: CombatActor["trait"] = undefined;
       let weaponName = "Standard Revolver 🔫";
 
       if (combatType === "nest_clearing") {
         enemyType = "scorpion";
+        enemyLevel = 1; // Scorpions are beasts, no human level
         if (i === 0) {
           enemyName = "Alpha Brood Emperor 🦂";
           hp = 65 + Math.round(difficultyRisk * 30);
@@ -1234,7 +1318,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
 
         hp = Math.round(hp * arch.hpMultiplier);
         dmg = Math.round(
-          wep.dmg * arch.dmgMultiplier * (1 + difficultyRisk * 0.3),
+          wep.dmg * arch.dmgMultiplier * (1 + difficultyRisk * 0.3) * levelFactor,
         );
         accuracy = Math.max(
           0.45,
@@ -1243,6 +1327,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
         range = Math.max(3, wep.range + arch.rangeModifier);
         clip = wep.clip;
         weaponName = wep.name;
+
+        if (isDifficult) {
+          hp = Math.round(hp * 1.2);
+          dmg = Math.round(dmg * 1.15);
+          accuracy = Math.min(0.95, accuracy + 0.05);
+        }
 
         if (combatType === "bounty" && i === 0) {
           enemyType = "outlaw_leader";
@@ -1284,11 +1374,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
         }
 
         // Add visual suffix descriptors to name
-        enemyName = `${enemyName} (The ${arch.namePrefix})`;
+        enemyName = `${enemyName} (Lvl ${enemyLevel}) (The ${arch.namePrefix})`;
 
         // Override name with specific requested targets
         if (i === 0 && activeProvokedNpcId === "slippery_pete") {
-          enemyName = "Slippery Pete (The Horse Thief)";
+          enemyName = "Slippery Pete (The Donkey Thief)";
           enemyType = "outlaw_leader";
           hp = 25;
           dmg = 8;
@@ -1297,8 +1387,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
           range = 3;
           accuracy = 0.5;
         } else if (i === 0 && activeProvokedNpcId === "sheriff_garrett") {
-          enemyName = "Sheriff Garrett (Federal Law)";
+          enemyName = activeProvokedNpcName ? `${activeProvokedNpcName} (Federal Law)` : "Sheriff Garrett (Federal Law)";
           enemyType = "sheriff";
+        } else if (i === 0 && activeProvokedNpcId === "bandit_boss") {
+          enemyName = activeProvokedNpcName ? `${activeProvokedNpcName} (Boss)` : "Notorious Bandit Boss";
+          enemyType = "outlaw_leader";
         } else if (
           i === 0 &&
           activeMissionTarget &&
@@ -1347,6 +1440,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       spawnedEnemies.push({
         id: `enemy_${i}_${Date.now() + Math.random()}`,
         name: enemyName,
+        level: enemyLevel,
         type: enemyType,
         hp,
         maxHp: hp,
@@ -1470,7 +1564,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       hp: player.hp,
       maxHp: player.maxHp,
       agility: pAgility,
-      accuracy: 0.65 + Math.min(0.3, wpnSkill * 0.02) + accuracyBonus / 100,
+      accuracy: 0.75 + Math.min(0.3, wpnSkill * 0.02) + accuracyBonus / 100,
       damage: player.weapon.dmg + damageBonus,
       isDead: false,
       isSurrendered: false,
@@ -1753,7 +1847,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
     }
 
     let pNextHp = playerHp;
-    if (fastestEnemy && p && fastestEnemy.agility > p.agility) {
+    const isCavalryEscape = (player.horsemanshipLevel || 0) >= 3;
+
+    if (isCavalryEscape) {
+      logsToAdd.push(
+        `🐎 CAVALRY ESCAPE: Your Level 3 Horsemanship bond allows you to escape instantly on horseback without taking any parting damage!`,
+      );
+    } else if (fastestEnemy && p && fastestEnemy.agility > p.agility) {
       logsToAdd.push(
         `⚠️ ${fastestEnemy.name} was faster and fired while you dived!`,
       );
@@ -2429,6 +2529,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
     value: number;
     coverType: "none" | "low" | "high";
     coverCell?: { x: number; y: number };
+    isOutOfRange: boolean;
   } => {
     const dist = Math.hypot(sx - rx, sy - ry);
 
@@ -2464,7 +2565,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       weaponRange + rangeBonus + (hasScope ? 3 : 0) + weatherRangeMod;
 
     if (dist > finalRange) {
-      return { value: 0, coverType: "none" };
+      return { value: 0, coverType: "none", isOutOfRange: true };
     }
 
     // STANCE & INJURY MODIFIERS:
@@ -2480,6 +2581,16 @@ export const CombatView: React.FC<CombatViewProps> = ({
         ? player.pistolSkill || 0
         : player.rifleSkill || 0;
       accuracy += Math.min(0.3, wpnSkill * 0.02);
+
+      // Level 1 Pistol Handling: Sleight of Hand (+10% accuracy)
+      if (isPistol && (player.pistolSkillLevel || 0) >= 1) {
+        accuracy += 0.10;
+      }
+
+      // Level 1 Rifle Proficiency: Steady Stance (+15% rifle accuracy in crouching/lying)
+      if (!isPistol && (player.rifleSkillLevel || 0) >= 1 && (stance === "crouching" || stance === "lying")) {
+        accuracy += 0.15;
+      }
 
       if (stance === "crouching") accuracy += 0.15;
       if (stance === "lying") accuracy += 0.3;
@@ -2505,6 +2616,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
     if (isReceiverPlayer) {
       if (stance === "crouching") accuracy -= 0.25;
       if (stance === "lying") accuracy -= 0.5;
+      if (combatCycleEvasionActive) accuracy -= 0.15; // -15% hit chance (15% evasion bonus)
+      if (player.hasHorse && (player.horsemanshipLevel || 0) >= 2) {
+        accuracy -= 0.15; // Mounted Ranger +15% Evasion
+      }
     }
 
     // Check intermediate covers
@@ -2556,8 +2671,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
       accuracy -= 0.15;
     }
 
-    const finalVal = Math.max(0.1, Math.min(0.95, accuracy));
-    return { value: finalVal, coverType: coverFound, coverCell };
+    const finalVal = Math.max(0, Math.min(0.95, accuracy));
+    return { value: finalVal, coverType: coverFound, coverCell, isOutOfRange: false };
   };
 
   // Proc lightning strike under Lightning Storm atmospheric weather
@@ -2743,6 +2858,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
     // Silence Skill reduces sound generation chance (up to 50% reduction at max skill 200)
     const soundModifier = 1 - currentSilence / 400;
     soundChance *= soundModifier;
+
+    if ((player.silenceSkillLevel || 0) >= 1) {
+      soundChance *= 0.70; // Soft Step -30% sound emission chance
+    }
 
     if (Math.random() <= soundChance) {
       addLog(
@@ -3755,6 +3874,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
       fireApCost = Math.max(1, fireApCost - 1);
     }
 
+    // Level 3 Custom Gunsmithing: Master Weaponsmith (-1 AP cost of firing)
+    if ((player.gunsmithSkillLevel || 0) >= 3) {
+      fireApCost = Math.max(1, fireApCost - 1);
+    }
+
     if (apRef.current < fireApCost) {
       if (hasScope) {
         addLog(
@@ -3773,6 +3897,12 @@ export const CombatView: React.FC<CombatViewProps> = ({
       wName.includes("pistol") ||
       wName.includes("revolver") ||
       wName.includes("colt");
+
+    // Desperado's Focus (Pistol level 3) AP refund check
+    let finalFireApCost = fireApCost;
+    if (isP && (player.pistolSkillLevel || 0) >= 3 && Math.random() < 0.20) {
+      finalFireApCost = 0;
+    }
 
     // Weapon condition & Jamming check
     let condition =
@@ -3802,19 +3932,23 @@ export const CombatView: React.FC<CombatViewProps> = ({
       addLog(
         `❌ CLICK! Your ${player.weapon.name} JAMMED! Mechanism failed due to poor condition (${Math.round(condition)}%)!`,
       );
-      setAp((a) => Math.max(0, a - fireApCost));
-      apRef.current = Math.max(0, apRef.current - fireApCost);
+      setAp((a) => Math.max(0, a - finalFireApCost));
+      apRef.current = Math.max(0, apRef.current - finalFireApCost);
       return;
     }
 
     // Emit Gunshot Sound flare (forces all turns looking here!)
     emitGunshotSound(playerPos.x, playerPos.y);
 
+    if (isP && finalFireApCost === 0) {
+      addLog(`⚡ DESPERADO'S FOCUS: Refunded the Action Point cost of your pistol shot!`);
+    }
+
     if (isShotgun) {
       // SHOTGUN SPRAY SPLASH AREA ACTION
       setPlayerClip((c) => Math.max(0, c - 1));
 
-      setAp((prev) => Math.max(0, prev - fireApCost));
+      setAp((prev) => Math.max(0, prev - finalFireApCost));
 
       setFireAnim(true);
       setTimeout(() => setFireAnim(false), 200);
@@ -3986,14 +4120,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
       );
 
       // Adjust hit chance based on active targeting choice
-      const adjustedHitValue = Math.max(
-        0.1,
-        Math.min(0.95, calcBase.value + targetedPenalty),
-      );
+      const adjustedHitValue = calcBase.isOutOfRange
+        ? 0
+        : Math.max(0, Math.min(0.95, calcBase.value + targetedPenalty));
 
       setPlayerClip((c) => Math.max(0, c - 1));
 
-      setAp((prev) => Math.max(0, prev - fireApCost));
+      setAp((prev) => Math.max(0, prev - finalFireApCost));
+      setPlayerShotsFired((prev) => prev + 1);
 
       setSelectedEnemyId(enemy.id);
       setFireAnim(true);
@@ -4011,16 +4145,61 @@ export const CombatView: React.FC<CombatViewProps> = ({
       );
 
       let baseDmg = player.weapon.dmg + damageBonus;
+
+      // Level 1 Custom Gunsmithing: Precision Polishing (+10% base damage)
+      if ((player.gunsmithSkillLevel || 0) >= 1) {
+        baseDmg = Math.round(baseDmg * 1.10);
+      }
+
       baseDmg = Math.round(baseDmg * dmgMultiplier); // Apply targeting multiplier
+
+      // Level 3 Rifle Proficiency: One Shot, One Kill (First rifle shot deals double damage)
+      if (!isPistol && (player.rifleSkillLevel || 0) >= 3 && playerShotsFired === 0) {
+        baseDmg = baseDmg * 2;
+        addLog(`🎯 ONE SHOT, ONE KILL: First rifle shot of combat deals double damage!`);
+      }
+
+      // Level 3 Reload Mastery: Bullet Storm (+40% bonus damage on next shot after full reload)
+      if (bulletStormActive) {
+        baseDmg = Math.round(baseDmg * 1.40);
+        setBulletStormActive(false);
+        addLog(`⚡ BULLET STORM: Your shot deals +40% bonus damage!`);
+      }
+
       if (player.perks.includes("executioner") && enemy.hp < enemy.maxHp / 2) {
         baseDmg = Math.round(baseDmg * 1.5);
       }
 
       let isCrit = false;
-      const critRandomCap = 0.08;
-      if (hitSuccess && Math.random() < critRandomCap + accuracyBonus / 100) {
+      let critChance = 0.08 + accuracyBonus / 100;
+
+      // Level 2 Pistol Handling: Fan the Hammer (+15% critical hit chance with pistols)
+      if (isPistol && (player.pistolSkillLevel || 0) >= 2) {
+        critChance += 0.15;
+      }
+
+      // Level 2 Rifle Proficiency: Deadeye Scope (+15% critical chance shooting from cover)
+      if (!isPistol && (player.rifleSkillLevel || 0) >= 2 && calcBase.coverType !== "none") {
+        critChance += 0.15;
+      }
+
+      // Level 2 Custom Gunsmithing: Hair Trigger (+10% critical hit chance)
+      if ((player.gunsmithSkillLevel || 0) >= 2) {
+        critChance += 0.10;
+      }
+
+      let isShadowAmbush = false;
+      if ((player.silenceSkillLevel || 0) >= 2 && isNight && playerShotsFired === 0) {
+        critChance = 1.0;
+        isShadowAmbush = true;
+      }
+
+      if (hitSuccess && Math.random() < critChance) {
         isCrit = true;
         baseDmg = Math.round(baseDmg * 1.8);
+        if (isShadowAmbush) {
+          addLog("🌙 SHADOW AMBUSH: Guaranteed critical hit on opening round under the cover of darkness!");
+        }
       }
 
       if (hitSuccess) {
@@ -4182,9 +4361,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
     if (turn !== "player" || apRef.current <= 0 || isAimingCannon) return;
 
     // Check if player has enough AP for reloading (unless free)
+    const reloadApCost = (player.reloadSkillLevel || 0) >= 1 ? 2 : 3;
     const isFree = player.perks.includes("fast_hands");
-    if (!isFree && ap < 3) {
-      addLog("⚠️ Reloading requires 3 Action Points!");
+    if (!isFree && ap < reloadApCost) {
+      addLog(`⚠️ Reloading requires ${reloadApCost} Action Points!`);
       return;
     }
 
@@ -4206,6 +4386,16 @@ export const CombatView: React.FC<CombatViewProps> = ({
     const totalToLoad = maxClipCap - playerClip;
     const actualLoaded = Math.min(totalToLoad, playerReserveAmmo);
 
+    // Level 2 Reload Mastery: Combat Cycle (+15% evasion if reloading with bullets remaining)
+    if ((player.reloadSkillLevel || 0) >= 2 && playerClip > 0) {
+      setCombatCycleEvasionActive(true);
+    }
+
+    // Level 3 Reload Mastery: Bullet Storm (full reload deals +40% bonus damage on next shot)
+    if ((player.reloadSkillLevel || 0) >= 3 && (playerClip + actualLoaded === maxClipCap)) {
+      setBulletStormActive(true);
+    }
+
     setPlayerClip((c) => c + actualLoaded);
     setPlayerReserveAmmo((r) => r - actualLoaded);
 
@@ -4217,11 +4407,19 @@ export const CombatView: React.FC<CombatViewProps> = ({
     }
 
     if (!isFree) {
-      setAp((prev) => prev - 3);
+      setAp((prev) => prev - reloadApCost);
+    }
+
+    let extraLog = "";
+    if ((player.reloadSkillLevel || 0) >= 2 && playerClip > 0) {
+      extraLog += " 🛡️ [Evasion +15% active!]";
+    }
+    if ((player.reloadSkillLevel || 0) >= 3 && (playerClip + actualLoaded === maxClipCap)) {
+      extraLog += " ⚡ [Bullet Storm +40% DMG ready!]";
     }
 
     addLog(
-      `🔄 Cylinders reloaded with +${actualLoaded} cartridges. Available reserve: ${playerReserveAmmo - actualLoaded}`,
+      `🔄 Cylinders reloaded with +${actualLoaded} cartridges. Available reserve: ${playerReserveAmmo - actualLoaded}.${extraLog}`,
     );
   };
 
@@ -4350,16 +4548,25 @@ export const CombatView: React.FC<CombatViewProps> = ({
     }
   }, [turn]);
 
-  // KEYBOARD TACTICAL MOVEMENT (wasdqeyc)
+  // KEYBOARD TACTICAL MOVEMENT (wasdqeyx)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (turn !== "player" || isAimingCannon || isAimingDynamite) return;
       if (
         ["INPUT", "TEXTAREA", "SELECT"].includes(
           (e.target as HTMLElement).tagName,
         )
       )
         return;
+
+      if (e.key === "Enter") {
+        if (turn === "player" && playerHp > 0) {
+          e.preventDefault();
+          handleEndPlayerTurn();
+        }
+        return;
+      }
+
+      if (turn !== "player" || isAimingCannon || isAimingDynamite) return;
 
       const key = e.key.toLowerCase();
       let dx = 0;
@@ -4390,7 +4597,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
           dx = -1;
           dy = 1;
           break;
-        case "c":
+        case "x":
           dx = 1;
           dy = 1;
           break;
@@ -4417,6 +4624,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
     ap,
     enemies,
     grid,
+    playerHp,
   ]);
 
   // GLOBAL VICTORY TARGET CHECK
@@ -4627,8 +4835,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
               const enemyWeaponLower = (enemy.weaponName || "").toLowerCase();
               if (enemyWeaponLower.includes("shotgun")) {
                 lootItems.push({
-                  id: "ammo_shotgun",
-                  name: "Box of 12 Gauge (Shotgun)",
+                  id: player.ammoScarcity ? "ammo_12_gauge" : "ammo_shotgun",
+                  name: player.ammoScarcity ? "Box of 12 Gauge Shells (Shotgun)" : "Box of 12 Gauge (Shotgun)",
                   type: "consumable",
                   value: 25,
                   count: Math.floor(Math.random() * 4) + 2, // 2-5 shells
@@ -4641,8 +4849,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 enemyWeaponLower.includes("sniper")
               ) {
                 lootItems.push({
-                  id: "ammo_rifle",
-                  name: "Box of .44-40 (Rifle)",
+                  id: player.ammoScarcity ? "ammo_44_40_winchester" : "ammo_rifle",
+                  name: player.ammoScarcity ? "Box of .44-40 Winchester (Rifle)" : "Box of .44-40 (Rifle)",
                   type: "consumable",
                   value: 20,
                   count: Math.floor(Math.random() * 6) + 4, // 4-9 rounds
@@ -4650,8 +4858,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 });
               } else {
                 lootItems.push({
-                  id: "ammo_pistol",
-                  name: "Box of .45 Colt (Pistol)",
+                  id: player.ammoScarcity ? "ammo_45_colt" : "ammo_pistol",
+                  name: player.ammoScarcity ? "Box of .45 Colt (Revolver)" : "Box of .45 Colt (Pistol)",
                   type: "consumable",
                   value: 10,
                   count: Math.floor(Math.random() * 8) + 6, // 6-13 rounds
@@ -4707,6 +4915,29 @@ export const CombatView: React.FC<CombatViewProps> = ({
       if (activeAiEnemyIndex !== null) {
         setActiveAiEnemyIndex(null);
       }
+      return;
+    }
+
+    if (activeSurpriseTurns > 0) {
+      addLog(`⚡ SURPRISE ADVANTAGE: Enemies are stunned and disoriented by your standoff maneuver! They skip their action loop.`);
+      setActiveSurpriseTurns((prev) => prev - 1);
+      
+      const baseLevelAp = Math.min(
+        12,
+        Math.round(
+          7 +
+            (player.campMovementLvl || 0) +
+            Math.max(0, player.level - 1) * 0.5,
+        ),
+      );
+      let baseAp = baseLevelAp - (combatWeather.id === "heatwave" ? 1 : 0);
+      if ((player.hydration ?? 100) <= 0) baseAp = Math.floor(baseAp * 0.5);
+
+      let newAp = baseAp - (isLegInjured ? 2 : 0);
+      setAp(newAp);
+      setTurn("player");
+      setPosseCombatActionsDone({});
+      setActiveAiEnemyIndex(null);
       return;
     }
 
@@ -4950,45 +5181,50 @@ export const CombatView: React.FC<CombatViewProps> = ({
           y: finalY,
         } as CombatActor);
         if (spotted) {
-          addLog(
-            `💥 OVERWATCH TRIGGER: ${player.name} fires a prepared shot at ${enemy.name}!`,
-          );
-          const hitChance = Math.min(0.95, 0.4 + playerOverwatchMode * 0.1);
-
-          if (Math.random() <= hitChance) {
-            const oDmg = Math.round(player.weapon.dmg * 1.5);
-            const remHp = Math.max(0, enemy.hp - oDmg);
+          const dist = Math.hypot(playerPos.x - finalX, playerPos.y - finalY);
+          const finalRange = player.weapon.range + rangeBonus + (hasScope ? 3 : 0);
+          
+          if (dist <= finalRange) {
             addLog(
-              `🎯 OVERWATCH HIT: ${enemy.name} takes a heavy -${oDmg} HP hit in the open!`,
+              `💥 OVERWATCH TRIGGER: ${player.name} fires a prepared shot at ${enemy.name}!`,
             );
-            setEnemies((prev) =>
-              prev.map((e) =>
-                e.id === enemy.id
-                  ? {
-                      ...e,
-                      hp: remHp,
-                      isSurrendered: remHp <= 0,
-                      isDead: false,
-                    }
-                  : e,
-              ),
-            );
+            const hitChance = Math.min(0.95, 0.4 + playerOverwatchMode * 0.1);
 
-            setPlayerOverwatchMode(0);
-
-            if (remHp <= 0) {
+            if (Math.random() <= hitChance) {
+              const oDmg = Math.round(player.weapon.dmg * 1.5);
+              const remHp = Math.max(0, enemy.hp - oDmg);
               addLog(
-                `☠️ FATAL OVERWATCH: ${enemy.name} dropped dead before completing their action!`,
+                `🎯 OVERWATCH HIT: ${enemy.name} takes a heavy -${oDmg} HP hit in the open!`,
               );
-              setActiveAiEnemyIndex((prev) => prev! + 1);
-              return;
+              setEnemies((prev) =>
+                prev.map((e) =>
+                  e.id === enemy.id
+                    ? {
+                        ...e,
+                        hp: remHp,
+                        isSurrendered: remHp <= 0,
+                        isDead: false,
+                      }
+                    : e,
+                ),
+              );
+
+              setPlayerOverwatchMode(0);
+
+              if (remHp <= 0) {
+                addLog(
+                  `☠️ FATAL OVERWATCH: ${enemy.name} dropped dead before completing their action!`,
+                );
+                setActiveAiEnemyIndex((prev) => prev! + 1);
+                return;
+              }
+              enemy = { ...enemy, hp: remHp };
+            } else {
+              addLog(
+                `💨 OVERWATCH MISS: ${player.name}'s suppressing shot went wide!`,
+              );
+              setPlayerOverwatchMode(0);
             }
-            enemy = { ...enemy, hp: remHp };
-          } else {
-            addLog(
-              `💨 OVERWATCH MISS: ${player.name}'s suppressing shot went wide!`,
-            );
-            setPlayerOverwatchMode(0);
           }
         }
       }
@@ -5097,17 +5333,21 @@ export const CombatView: React.FC<CombatViewProps> = ({
             enemy.accuracy,
             enemy.range,
           );
-          let baseHitChance = calcObj.value;
-          // Scale based on world difficulty
-          baseHitChance += difficultyRisk * 0.25;
-          // Player evasion scaling: reduces enemy hit chance as player levels up
-          const playerEvasion = Math.min(0.2, (player.level || 1) * 0.01);
-          let modifiedCalcValue = baseHitChance - playerEvasion;
+          const isOutOfRange = calcObj.isOutOfRange;
+          let modifiedCalcValue = isOutOfRange ? 0 : calcObj.value;
 
-          if (enemy.trait === "quickdraw") {
-            modifiedCalcValue += 0.1;
+          if (!isOutOfRange) {
+            // Scale based on world difficulty
+            modifiedCalcValue += difficultyRisk * 0.25;
+            // Player evasion scaling: reduces enemy hit chance as player levels up
+            const playerEvasion = Math.min(0.2, (player.level || 1) * 0.01);
+            modifiedCalcValue -= playerEvasion;
+
+            if (enemy.trait === "quickdraw") {
+              modifiedCalcValue += 0.1;
+            }
+            modifiedCalcValue = Math.max(0.05, Math.min(0.95, modifiedCalcValue));
           }
-          modifiedCalcValue = Math.max(0.05, Math.min(0.95, modifiedCalcValue));
 
           let hitSuccess = Math.random() <= modifiedCalcValue;
           drawShootLine(
@@ -6141,10 +6381,9 @@ export const CombatView: React.FC<CombatViewProps> = ({
                     0.8,
                     player.weapon.range,
                   );
-                  overlayPct = Math.max(
-                    10,
-                    Math.min(95, Math.round(calc.value * 100)),
-                  );
+                  overlayPct = calc.isOutOfRange
+                    ? 0
+                    : Math.max(0, Math.min(95, Math.round(calc.value * 100)));
                 }
 
                 hitChanceOverlay = (
