@@ -1,3 +1,16 @@
+/**
+ * =========================================================================
+ *  TOWN AND FRONTIER TYPES
+ * =========================================================================
+ * These types define the core structures of the game world.
+ * 
+ * SUGGESTION FOR NEW FEATURES:
+ * If you want to add a new Location Type (e.g., 'casino_boat', 'gold_rush_camp'),
+ * add it here to `LocationType`. Then, make sure you update:
+ * 1. `procedural.ts` to generate it on the map.
+ * 2. `OverlandMap.tsx` to give it a map icon.
+ * 3. `TownView.tsx` to handle what it looks like when visited.
+ */
 export type LocationType =
   | "boomtown"
   | "ghost_town"
@@ -11,6 +24,14 @@ export type LocationType =
   | "ephemeral_stash"
   | "native_settlement";
 
+/**
+ * =========================================================================
+ *  ITEM & WEAPON DEFINITIONS
+ * =========================================================================
+ * SUGGESTION FOR NEW FEATURES:
+ * To add new item mechanics (like armor, mounts, clothing), extend 
+ * the `InventoryItem` type below. E.g., add `armorStats` or `mountStats`.
+ */
 export interface Weapon {
   name: string;
   dmg: number;
@@ -172,6 +193,15 @@ export interface MarketBulletin {
   message: string;
 }
 
+/**
+ * =========================================================================
+ *  PLAYER & POSSE DEFINITIONS
+ * =========================================================================
+ * SUGGESTION FOR NEW FEATURES:
+ * To add new progression mechanics (like new skills, diseases, hunger/thirst tracking), 
+ * extend the `Player` interface below.
+ * E.g., `hunger: number;`, `stamina: number;`, `wantedLevelInSpecificTowns: Record<string, number>`
+ */
 export interface Player {
   appearance?: {
     gender: "male" | "female";

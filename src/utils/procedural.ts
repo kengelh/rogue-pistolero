@@ -21,6 +21,18 @@ const OUTLAW_LAST_NAMES = [
   'Miller', 'Holliday', 'Earp', 'Hardin', 'Clanton', 'McLaury', 'Red', 'Vane'
 ];
 
+/**
+ * =========================================================================
+ *  PROCEDURAL GENERATION CORE
+ * =========================================================================
+ * This file handles all procedural generation for the game world, including
+ * location placement, shop inventories, and dynamic quest/mission generation.
+ * 
+ * SUGGESTION FOR NEW FEATURES:
+ * - `generateLocationName`: Add your custom town names here.
+ * - `generateShop`: To add a new consumable or weapon part to all stores, inject it here.
+ * - `generateMissions`: To add a new dynamic quest type (e.g. "Bounty Hunter Wanted"), add it here.
+ */
 export function generateLocationName(type: LocationType): string {
   if (type === 'ghost_town') {
     const list = ['Ashes Drop', 'Grave Creek', 'Purgatory Valley', 'Coffin Hill', 'Bone Dry Pass', 'Whispering Sands'];
@@ -236,6 +248,18 @@ export function generateShop(type: LocationType, risk: number, prosperity: numbe
 import { instantiateStorylineQuest } from './storylines';
 
 export function generateMissionsForLocation(originId: string, locations: Location[]): Mission[] {
+  /**
+   * =========================================================================
+   *  QUEST & MISSION GENERATION
+   * =========================================================================
+   * This generates the wanted posters on the town board.
+   * 
+   * SUGGESTION FOR NEW FEATURES:
+   * 1. Want to add a new quest (e.g. "Cattle Drive")? 
+   *    Just `missions.push({ type: 'cattle_drive', title: '...', ... })` here.
+   * 2. Remember to update `App.tsx` or `TownView.tsx` to handle the new quest type 
+   *    when the player reaches the target location.
+   */
   const missions: Mission[] = [];
   const targetPool = locations.filter(loc => loc.id !== originId);
   const originLoc = locations.find(loc => loc.id === originId);
@@ -338,22 +362,6 @@ export function generateMissionsForLocation(originId: string, locations: Locatio
     description: `The Sheriff is offering a reward for bringing in ${outlaw} (Level ${targetLevel}) dead or alive. Last spotted hiding out in the vicinity of ${bountyTargetLoc.name}.`,
     originLocationId: originId,
     targetLocationId: bountyTargetLoc.id
-  });
-
-  // Bank Robbery Mission
-  const robberyTargetLoc = targetPool.filter(loc => loc.type === 'boomtown' || loc.type === 'railway_hub')[0] || targetPool[0];
-  missions.push({
-    id: `mission_robbery_${Math.random().toString(36).substr(2, 5)}`,
-    title: `Bank Heist at ${robberyTargetLoc.name}`,
-    type: 'robbery',
-    targetName: 'Bank Teller & Guards',
-    rewardGold: Math.round(300 + Math.random() * 200 + robberyTargetLoc.risk * 300),
-    rewardXp: Math.round(80 + robberyTargetLoc.risk * 100),
-    reputationChange: -25,
-    danger: robberyTargetLoc.risk < 0.4 ? 'medium' : robberyTargetLoc.risk < 0.75 ? 'high' : 'deadly',
-    description: `Crack the vault at the bank in ${robberyTargetLoc.name}. Beware! The local deputies are highly armed and robbing them will severely damage your local legal standing.`,
-    originLocationId: originId,
-    targetLocationId: robberyTargetLoc.id
   });
 
   // Clear Infestation (Desert or Ghost Town)

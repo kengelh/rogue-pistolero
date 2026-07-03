@@ -281,6 +281,63 @@ export function tickOverlandActors(
     };
   });
 
+  // Dynamic pursuit: If player has a substantial bounty (>= 150), and there are no active, non-defeated legendary hunters,
+  // there's a 15% chance per game step to spawn a high-speed, dangerous District Marshall to track them down.
+  const activeHuntingBountyHunters = updatedActors.filter(
+    (a) => a.type === "bounty_hunter" && !a.isDefeated && a.state === "hunting"
+  );
+
+  if (playerBounty >= 150 && activeHuntingBountyHunters.length === 0 && Math.random() < 0.15) {
+    const legendaryNames = [
+      "Marshall Vance",
+      "Texas Ranger Cordell",
+      "Cole 'Grim' Younger",
+      "Regulator Miller",
+      "Federal Marshal Stark",
+      "Sheriff 'Ironfist' Garrity",
+    ];
+    // Use procedural seed or random to pick one not already present
+    const unplacedName = legendaryNames.find(name => !updatedActors.some(a => a.name.includes(name))) || legendaryNames[0];
+    const id = `dynamic_hunter_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+    // Choose a starting location far from the player (e.g. Cavalry Fort or remote Mine/Outpost)
+    const farLocs = locations.filter(
+      (l) => Math.hypot(l.x - playerX, l.y - playerY) > 35
+    );
+    const startLoc =
+      farLocs.length > 0
+        ? farLocs[Math.floor(Math.random() * farLocs.length)]
+        : locations[locations.length - 1] || locations[0];
+
+    if (startLoc) {
+      // Calculate start coordinates near the selected location
+      const angle = Math.random() * Math.PI * 2;
+      const x = Math.max(3, Math.min(97, startLoc.x + Math.cos(angle) * 4));
+      const y = Math.max(3, Math.min(97, startLoc.y + Math.sin(angle) * 4));
+
+      const newMarshal: OverlandActor = {
+        id,
+        name: unplacedName,
+        type: "bounty_hunter",
+        x,
+        y,
+        speed: 1.85, // Highly persistent and fast stallion tracker!
+        state: "hunting",
+        health: 135, // High Boss-level health!
+        maxHealth: 135,
+        bountyTargetPrice: Math.round(playerBounty * 0.4 + 100),
+        avatarIcon: "🤠",
+        description: `District Federal Marshal ${unplacedName} dispatched on authority warrant to hunt down the outlaw desperado at any cost!`,
+        isDefeated: false,
+      };
+
+      updatedActors.push(newMarshal);
+      logs.push(
+        `🚨 FEDERAL WARRANT EXECUTED: Marshal ${unplacedName} has mobilized a heavy pursuit posse from ${startLoc.name}! They are riding hot on your trail!`
+      );
+    }
+  }
+
   return { updatedActors, logs };
 }
 

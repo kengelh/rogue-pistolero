@@ -79,6 +79,7 @@ interface TownViewProps {
   onCollectBounty?: (itemId: string) => void;
   onRaidStash?: (locId: string) => void;
   onTriggerTip?: (id: string, title: string, desc: string) => void;
+  overlandActors?: import("../types").OverlandActor[];
 }
 
 const PERK_OPTIONS = [
@@ -338,6 +339,19 @@ export const MERCENARY_POOL: (PosseMember & {
   },
 ];
 
+/**
+ * =========================================================================
+ *  TOWN VIEW (MAIN SETTLEMENT HUB)
+ * =========================================================================
+ * This component controls everything the player can do while inside a town
+ * or settlement (Shopping, Saloon, Bank, Bounties, Crafting).
+ * 
+ * SUGGESTION FOR NEW FEATURES:
+ * To add a new building/tab (e.g. "Tailor" or "Stable"):
+ * 1. Add it to the `activeTab` state below: `| 'tailor'`.
+ * 2. Add a tab button in the `<div className="flex flex-wrap gap-2 mb-4">` section.
+ * 3. Add a rendering block: `{activeTab === 'tailor' && ( ... )}` near the bottom.
+ */
 export const TownView: React.FC<TownViewProps> = ({
   location,
   worldLocations,
@@ -363,6 +377,7 @@ export const TownView: React.FC<TownViewProps> = ({
   onReturnToMap,
   onRaidStash,
   onTriggerTip,
+  overlandActors,
 }) => {
   const [activeTab, setActiveTab] = useState<
     | "map"
@@ -788,10 +803,40 @@ export const TownView: React.FC<TownViewProps> = ({
 
   const shootOnSightInfo = checkShootOnSight();
 
-  const availableMissions = location.quests.filter((m) => {
+  let availableMissions = location.quests.filter((m) => {
     const isAccepted = player.inventory.some((item) => item.id === m.id);
     return !isAccepted;
   });
+
+  // Limit to 6 posters
+  if (availableMissions.length > 6) {
+    availableMissions = availableMissions.slice(0, 6);
+  }
+
+  // Ensure at least one quest is at player level (if it's a bounty)
+  let hasPlayerLevelQuest = false;
+  for (const m of availableMissions) {
+    if (m.type === 'bounty' && m.targetLevel && Math.abs(m.targetLevel - player.level) <= 1) {
+      hasPlayerLevelQuest = true;
+      break;
+    }
+  }
+
+  if (!hasPlayerLevelQuest) {
+    // Find the first bounty to adjust
+    const index = availableMissions.findIndex(m => m.type === 'bounty');
+    if (index !== -1) {
+      const m = { ...availableMissions[index] };
+      m.targetLevel = player.level;
+      m.title = m.title.replace(/Lvl \d+/, `Lvl ${player.level}`);
+      m.description = m.description.replace(/Level \d+/, `Level ${player.level}`);
+      const targetLevel = player.level;
+      m.danger = targetLevel < 5 ? 'low' : targetLevel < 12 ? 'medium' : targetLevel < 18 ? 'high' : 'deadly';
+      m.rewardGold = Math.round(targetLevel * 10 + Math.pow(targetLevel, 1.5) * 1.5 + 10);
+      m.rewardXp = Math.round(50 + targetLevel * 10);
+      availableMissions[index] = m;
+    }
+  }
 
   const [barkeepDialogue, setBarkeepDialogue] = useState<{
     speaker: string;
@@ -1256,128 +1301,252 @@ export const TownView: React.FC<TownViewProps> = ({
                       ⚔️ Provoke the Outlaw Cap'n
                     </button>
                   )}
-
-
                 </div>
               </div>
 
-              {/* Saloon Jobs Bulletin board / Wanted Posters */}
-              <div className="bg-[#e8dec7] border border-[#bfae96]/60 p-4 rounded-sm space-y-2 mt-4">
-                <h4 className="text-[10px] font-serif font-bold text-[#664d36] uppercase tracking-widest flex items-center gap-1.5 pb-1 border-b border-[#bfae96]/60">
-                  <Target size={12} className="text-[#c4451a]" /> Wanted Posters
-                  & Town Bounties
-                </h4>
+              {/* Immersive Wood-Paneled Wanted Bulletin Board */}
+              <div id="wanted-bulletin-board" className="bg-[#3a2717] border-4 border-[#21160d] p-4 md:p-6 rounded-sm space-y-4 mt-6 shadow-2xl relative">
+                {/* Board Heading */}
+                <div className="flex justify-between items-center pb-2 border-b border-[#735235]">
+                  <h4 className="text-xs font-serif font-bold text-[#e6c49c] uppercase tracking-widest flex items-center gap-2">
+                    <Target size={13} className="text-[#c4451a] animate-pulse" />
+                    <span>District Wanted Bulletin Board & Sheriff Bounties</span>
+                  </h4>
+                  <span className="text-[9px] font-mono bg-[#21160d] text-[#e6c49c] px-2 py-0.5 rounded border border-[#735235]/40 uppercase tracking-wider">
+                    Post-wide Dispatch
+                  </span>
+                </div>
 
-                {/* Reputation Blocks */}
+                {/* Reputation Warning Bars */}
                 {isLawmenHostile && (
-                  <div className="bg-red-950/20 border border-red-900 p-2.5 rounded-sm text-[10px] text-red-500 font-sans">
-                    ⚠️ <b>BOUNTIES LOCKED</b>: The local Sheriff will not offer
-                    bounties to wanted outlaws. (Need Law Reputation &gt; -15,
-                    currently {player.factionReputation?.lawmen ?? 0} Infamy)
+                  <div className="bg-red-950/40 border border-red-900/60 p-3 rounded-sm text-[10px] text-red-300 font-sans">
+                    ⚠️ <b>BOUNTIES LOCKED</b>: The local Sheriff has authorized a shoot-to-kill order on you. Federal bounty deeds are locked for wanted outlaws. (Need Law Reputation &gt; -15, currently {player.factionReputation?.lawmen ?? 0} Infamy)
                   </div>
                 )}
 
                 {isTribesHostile && (
-                  <div className="bg-orange-950/20 border border-orange-950 p-2.5 rounded-sm text-[10px] text-orange-400 font-sans mt-2">
-                    ⚠️ <b>TRIBAL MISSIONS COLD</b>: Native pathfinders are wary
-                    of you and sacred tasks are locked. (Need Tribes standing
-                    &gt; -20)
+                  <div className="bg-orange-950/40 border border-orange-900/60 p-3 rounded-sm text-[10px] text-orange-300 font-sans">
+                    ⚠️ <b>TRIBAL CONTRACTS COLD</b>: Native pathfinders are wary of your high heat. Sacred tasks and escort deeds are locked. (Need Tribes standing &gt; -20)
                   </div>
                 )}
 
-                {availableMissions.length === 0 ? (
-                  <div className="text-[11px] p-6 bg-[#e8dec7] text-[#664d36] italic text-center rounded-sm border border-[#bfae96]/35 font-serif">
-                    No active assignments on the board. Ride out to adjacent
-                    districts to renew targets.
-                  </div>
-                ) : (
-                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                    {availableMissions.map((mission) => {
-                      const repChangeLabel =
-                        mission.reputationChange > 0
-                          ? `+${mission.reputationChange} Honor`
-                          : `${mission.reputationChange} Infamy`;
+                {/* ROW 1: Player's Own Personal Wanted Poster (if wanted) */}
+                {player.bounty && player.bounty > 0 ? (() => {
+                  // Determine Player Alias
+                  const rep = player.reputation || 0;
+                  const banks = player.stats?.banksRobbed || 0;
+                  const duels = player.stats?.duelsWon || 0;
+                  let alias = "The Frontier Desperado";
+                  if (rep <= -80) alias = "The Scourge of the Badlands";
+                  else if (rep <= -50 && banks > 0) alias = "The Notorious Bank-Buster";
+                  else if (rep <= -30) alias = "The Quick-Trigger Bandit";
+                  else if (banks >= 2) alias = "The Grand Vault Plunderer";
+                  else if (duels >= 5) alias = "The Cold-Blooded Duelist";
 
-                      // Lock check
-                      const isLocked =
-                        (mission.type === "bounty" && isLawmenHostile) ||
-                        (mission.type === "scavenge" && isTribesHostile) ||
-                        (mission.type === "escort" && isLawmenHostile);
+                  // Determine crimes list
+                  const crimesList = [];
+                  if (banks > 0) crimesList.push(`${banks} Armed Bank Heist(s)`);
+                  if (player.bounty >= 300) crimesList.push("Grand Train Car Robbery");
+                  if (duels > 0) crimesList.push(`${duels} Fatal Duel(s)`);
+                  if (rep < -10) crimesList.push("Defying Outpost Marshal & General Lawlessness");
+                  if (crimesList.length === 0) crimesList.push("Suspicious behavior, vagrancy, and skipping saloon tabs");
+                  const crimesDesc = crimesList.join(", ") + ".";
 
-                      return (
-                        <div
-                          key={mission.id}
-                          className={`p-3 bg-[#dfd4bd] border rounded-sm flex flex-col justify-between sm:flex-row sm:items-center gap-3 transition-all ${isLocked ? "border-red-950/40 opacity-40" : "border-[#bfae96] hover:border-[#8a705a]/50"}`}
-                        >
-                          <div className="space-y-1 flex-1">
-                            <div className="flex items-center gap-2">
-                              {isLocked ? (
-                                <span className="text-red-500 font-serif font-bold text-xs">
-                                  [LOCKED] {mission.title}
+                  // Check if any bounty hunters are actively tracking on map
+                  const huntersHunting = (overlandActors || []).filter(
+                    (a) => a.type === "bounty_hunter" && !a.isDefeated && a.state === "hunting"
+                  );
+
+                  return (
+                    <div className="bg-[#e6d8b8] border-8 border-[#cfbfa0] border-double p-5 rounded-sm max-w-sm mx-auto text-stone-900 shadow-xl font-serif flex flex-col items-center text-center relative overflow-hidden my-2">
+                      {/* Distressed Corner Stamps */}
+                      <div className="absolute top-2 left-2 text-[8px] text-stone-500 tracking-wider select-none font-sans border border-stone-400 px-1 py-0.5 rounded-sm">
+                        DISTRICT WARRANT #{(player.bounty * 7) % 10000}
+                      </div>
+                      
+                      <div className="border-b-2 border-stone-900 w-full pb-1.5 mt-4">
+                        <div className="text-stone-700 text-[10px] font-sans font-bold tracking-widest uppercase">
+                          District Administration Offense Notice
+                        </div>
+                        <h3 className="text-red-800 text-3xl font-black tracking-widest uppercase font-serif mt-1 leading-none">
+                          WANTED
+                        </h3>
+                        <div className="text-[10px] text-red-900 font-bold uppercase tracking-wider mt-0.5">
+                          DEAD OR ALIVE
+                        </div>
+                      </div>
+
+                      {/* Sketch Placeholder box mimicking an old newspaper engraving */}
+                      <div className="my-4 border-2 border-stone-950 bg-[#ebdcb9] p-3 w-32 h-32 flex flex-col items-center justify-center text-5xl relative overflow-hidden shadow-inner border-double">
+                        <div className="text-center">
+                          {player.appearance?.hat === "cowboy"
+                            ? "🤠"
+                            : player.appearance?.hat === "sombrero"
+                              ? "🧔"
+                              : player.appearance?.gender === "female"
+                                ? "👩‍🌾"
+                                : "👨‍🌾"}
+                        </div>
+                        <span className="text-[7px] font-mono tracking-wider uppercase text-stone-600 mt-2">
+                          {player.name || "SADDLE TRAMP"}
+                        </span>
+                      </div>
+
+                      {/* Details */}
+                      <div className="space-y-1 w-full border-t border-stone-800/40 pt-2 text-stone-800 font-serif">
+                        <div className="text-xs font-black uppercase tracking-wide">
+                          {player.name || "The Nameless Gunslinger"}
+                        </div>
+                        <div className="text-[9px] text-[#8c6b0c] font-black uppercase italic tracking-wider font-sans">
+                          "{alias}"
+                        </div>
+                        <div className="text-[9px] text-stone-700 font-sans leading-relaxed text-center px-1 py-1 max-h-[64px] overflow-y-auto bg-stone-900/5 rounded-sm border border-stone-900/10">
+                          <b>OFFENSES:</b> {crimesDesc}
+                        </div>
+                      </div>
+
+                      <div className="mt-4 bg-stone-900 text-[#ebdcb9] px-4 py-2 border border-stone-900 shadow rounded-sm flex flex-col items-center w-full">
+                        <span className="text-[8px] uppercase tracking-widest font-sans font-bold text-stone-400">
+                          CASH BOUNTY REWARD
+                        </span>
+                        <span className="text-xl font-bold tracking-wider text-red-500 font-mono">
+                          ${player.bounty}
+                        </span>
+                      </div>
+
+                      {/* Dynamic Pursuit tracker details inside poster */}
+                      <div className="mt-4 w-full bg-red-950/10 border border-red-950/30 p-2.5 rounded text-left font-sans text-stone-800">
+                        <h5 className="text-[9px] font-bold text-red-900 uppercase tracking-widest flex items-center gap-1.5 pb-1 border-b border-red-900/20 mb-1.5">
+                          <Compass size={10} className="animate-spin text-red-800" />
+                          <span>Pursuit Tracker Status</span>
+                        </h5>
+                        {huntersHunting.length > 0 ? (
+                          <div className="space-y-1">
+                            {huntersHunting.map((hunter) => {
+                              // Calculate distance from current town coordinate
+                              const dist = Math.hypot(hunter.x - location.x, hunter.y - location.y);
+                              let distanceLabel = `${Math.max(1, Math.round(dist * 2.5))} miles away`;
+                              let indicatorColor = "text-orange-700 font-bold";
+                              if (dist < 4) {
+                                distanceLabel += " — CLOSE BY!";
+                                indicatorColor = "text-red-700 font-black animate-pulse";
+                              } else {
+                                distanceLabel += " — RIDING HARD";
+                              }
+
+                              return (
+                                <div key={hunter.id} className="text-[9px] leading-tight flex justify-between items-center flex-wrap">
+                                  <span className="font-semibold text-stone-900">⭐ {hunter.name}</span>
+                                  <span className={indicatorColor}>{distanceLabel}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[9px] italic text-stone-600">
+                            No district marshals currently on your trail. Keep a low profile inside settlements to avoid heat.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })() : null}
+
+                {/* ROW 2: Available Bounties Grids styled as Wanted Posters */}
+                <div className="bg-[#2b1b10] p-4 rounded border border-[#593c24]/50">
+                  <h5 className="text-[10px] font-serif font-black text-[#ebdcb9] uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                    <span>📜 Available Bounty deeds & Sheriff Warrants</span>
+                  </h5>
+
+                  {availableMissions.length === 0 ? (
+                    <div className="text-[11px] p-8 bg-[#3d2717]/60 text-[#d9c5af] italic text-center rounded-sm border border-[#593c24]/30 font-serif">
+                      No active sheriff assignments on the board. Ride out to adjacent frontier sectors to discover new fugitives!
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {availableMissions.map((mission) => {
+                        const repChangeLabel =
+                          mission.reputationChange > 0
+                            ? `+${mission.reputationChange} Honor`
+                            : `${mission.reputationChange} Infamy`;
+
+                        const isLocked =
+                          (mission.type === "bounty" && isLawmenHostile) ||
+                          (mission.type === "scavenge" && isTribesHostile) ||
+                          (mission.type === "escort" && isLawmenHostile);
+
+                        return (
+                          <div
+                            key={mission.id}
+                            className={`bg-[#eedfbf] border-4 border-[#cfbfa0] border-double p-4 text-stone-900 rounded-sm shadow-md flex flex-col justify-between transition-all hover:scale-[1.01] ${
+                              isLocked ? "opacity-35 select-none" : "hover:border-[#b1a285] hover:shadow-lg"
+                            }`}
+                          >
+                            <div>
+                              {/* WANTED Stamp Header on each individual poster */}
+                              <div className="flex justify-between items-center pb-1 border-b border-stone-800/30 mb-2">
+                                <span className="text-[8px] font-sans font-black tracking-widest text-[#a82c2c] uppercase">
+                                  {mission.type === "bounty" ? "★ BOUNTY WARRANT" : "⚓ DEED CONTRACT"}
                                 </span>
+                                <span
+                                  className={`text-[8px] px-1.5 rounded-sm uppercase font-mono font-bold border ${
+                                    mission.danger === "low"
+                                      ? "bg-emerald-100 text-emerald-800 border-emerald-400/30"
+                                      : mission.danger === "medium"
+                                        ? "bg-amber-100 text-amber-800 border-amber-400/30"
+                                        : mission.danger === "high"
+                                          ? "bg-red-100 text-red-800 border-red-400/30"
+                                          : "bg-purple-100 text-purple-800 border-purple-400/30 animate-pulse"
+                                  }`}
+                                >
+                                  {mission.danger} risk
+                                </span>
+                              </div>
+
+                              <h4 className="text-xs font-black tracking-wide text-stone-800 font-serif uppercase">
+                                {mission.isStoryline && (
+                                  <span className="text-amber-600 mr-1 animate-bounce">★</span>
+                                )}
+                                {mission.title}
+                              </h4>
+                              <p className="text-[10px] text-stone-700 leading-normal font-sans mt-1.5 line-clamp-3">
+                                {mission.description}
+                              </p>
+                            </div>
+
+                            <div className="mt-4 pt-2 border-t border-stone-800/35 flex justify-between items-end">
+                              <div className="font-mono text-[9px] uppercase tracking-wider text-stone-600 space-y-0.5">
+                                <div className="text-[#a82c2c] font-black text-[10px]">
+                                  PAYOUT: ${mission.rewardGold}
+                                </div>
+                                <div className="text-sky-800">
+                                  XP GAIN: +{mission.rewardXp}
+                                </div>
+                                <div className="text-purple-800 font-semibold">
+                                  {repChangeLabel}
+                                </div>
+                              </div>
+
+                              {!isLocked ? (
+                                <button
+                                  id={`accept-${mission.id}`}
+                                  onClick={() => onAcceptMission(mission)}
+                                  className="py-1 px-3 bg-[#3d2d21] hover:bg-[#523d2e] text-[#f4ead5] hover:text-[#ebdcb9] rounded-sm font-serif font-bold uppercase text-[9px] tracking-wider transition-all shadow cursor-pointer border border-[#1c140f]"
+                                >
+                                  Sign Warrant
+                                </button>
                               ) : (
-                                <span className="text-[#8c6b0c] font-serif font-bold text-xs">
-                                  {mission.isStoryline ? (
-                                    <span className="text-purple-400 mr-1 animate-pulse">
-                                      ✦
-                                    </span>
-                                  ) : (
-                                    ""
-                                  )}
-                                  {mission.title}
+                                <span className="text-[8px] text-red-600 font-serif font-black uppercase tracking-wider">
+                                  LOCKED
                                 </span>
                               )}
-                              <span
-                                className={`text-[8px] px-1.5 rounded-sm uppercase tracking-wider font-semibold font-serif ${
-                                  mission.danger === "low"
-                                    ? "bg-[#1a3a4d]/40 text-sky-400 border border-sky-900/40"
-                                    : mission.danger === "medium"
-                                      ? "bg-[#dfd4bd] text-[#8c6b0c] border border-[#bfae96]"
-                                      : mission.danger === "high"
-                                        ? "bg-[#2d0a0a] text-[#c4451a] border border-[#4d1a1a]"
-                                        : "bg-red-950/80 text-red-400 border border-red-800 animate-pulse"
-                                }`}
-                              >
-                                {mission.danger} risk
-                              </span>
                             </div>
-                            <p className="text-[10px] text-[#4a3928] leading-normal font-sans">
-                              {mission.description}
-                            </p>
                           </div>
-
-                          <div className="text-right sm:border-l sm:border-[#bfae96] sm:pl-3 min-w-[130px] space-y-1.5 flex flex-col items-end">
-                            <div className="text-right font-mono text-[9px] uppercase tracking-wide leading-tight text-[#664d36]">
-                              <div className="text-[#8c6b0c] font-bold">
-                                Payout: ${mission.rewardGold}
-                              </div>
-                              <div className="text-sky-400">
-                                XP: +{mission.rewardXp}
-                              </div>
-                              <div className="text-purple-400 font-bold">
-                                {repChangeLabel}
-                              </div>
-                            </div>
-
-                            {!isLocked ? (
-                              <button
-                                id={`accept-${mission.id}`}
-                                onClick={() => onAcceptMission(mission)}
-                                className="w-full py-1 px-2.5 bg-[#3d2d21] hover:bg-[#4d3a2b] text-[#8c6b0c] rounded-sm font-bold uppercase text-[9px] tracking-wider transition-all border-b border-[#1a130f] cursor-pointer font-serif"
-                              >
-                                Take poster!
-                              </button>
-                            ) : (
-                              <span className="text-[8px] text-red-500 uppercase tracking-widest font-serif">
-                                Hostile Alignment
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

@@ -42,6 +42,7 @@ import { InventoryModal } from "./components/InventoryModal";
 import { OverlandMap } from "./components/OverlandMap";
 import { TownView } from "./components/TownView";
 import { CombatView } from "./components/CombatView";
+import { PythonCourse } from "./components/PythonCourse";
 import { GameLogs } from "./components/GameLogs";
 import { DataExplorer } from "./components/DataExplorer";
 import { WeaponBenchModal } from "./components/WeaponBenchModal";
@@ -72,6 +73,7 @@ import {
   Download,
   User,
   Package,
+  Code,
 } from "lucide-react";
 import { FrontierAudio } from "./utils/AudioSynth";
 import {
@@ -98,6 +100,21 @@ const safeLocalStorage = {
 };
 
 export default function App() {
+  /**
+   * =========================================================================
+   *  CORE GAME STATE
+   * =========================================================================
+   * This is where all the game's high-level state is stored. 
+   * 
+   * SUGGESTION FOR NEW FEATURES:
+   * 1. To add a new UI screen (like a "Casino View" or "Bank Robbery View"),
+   *    add it to `activeView` below. 
+   * 2. To add global variables like "globalTimeOfDay" or "weather", 
+   *    add `useState` hooks here.
+   * 3. To add a persistent game-wide modifier (like a famine, gold rush), 
+   *    add a state here and save/load it in `handleSaveGame` / `handleLoadGame`.
+   */
+
   const [isMuted, setIsMuted] = useState(true); // Default muted to comply with browser policy
   const [isGodModeOpen, setIsGodModeOpen] = useState(false);
   const [isGodModeActive, setIsGodModeActive] = useState(false);
@@ -205,6 +222,7 @@ export default function App() {
     | "victory"
     | "data"
     | "ambush_defeat"
+    | "python_course"
   >("intro");
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [introFirstName, setIntroFirstName] = useState("The");
@@ -3903,7 +3921,19 @@ export default function App() {
               >
                 Enter Town
               </button>
+
+              <button
+                onClick={() => setActiveView("python_course")}
+                className="w-full sm:w-auto mt-4 bg-[#1a2f4c] hover:bg-[#2a456c] text-sky-200 py-2 px-6 rounded-sm border border-[#2a456c] uppercase tracking-wider font-bold text-xs transition-colors cursor-pointer shadow-lg flex items-center justify-center gap-2"
+              >
+                <Code size={14} /> Learn to Code This in Python
+              </button>
             </div>
+          )}
+
+          {/* PYTHON COURSE VIEW */}
+          {activeView === "python_course" && (
+            <PythonCourse onClose={() => setActiveView("intro")} />
           )}
 
           {/* OVERLAND MAP VIEW */}
@@ -3984,6 +4014,19 @@ export default function App() {
               />
             </div>
           )}
+
+          {/**
+           * =========================================================================
+           *  UI ROUTING / SCREEN MANAGEMENT
+           * =========================================================================
+           * The main gameplay screens are toggled based on the `activeView` state.
+           * 
+           * SUGGESTION FOR NEW FEATURES:
+           * If you want to add a completely new screen (e.g. "Saloon Poker Mini-game"),
+           * 1. Add `| "poker"` to the `activeView` TypeScript union definition at the top.
+           * 2. Copy the pattern below:
+           *    `{activeView === "poker" && <PokerGame onClose={() => setActiveView("town")} />}`
+           */}
 
           {/* TOWN VIEW DISTRICT */}
           {activeView === "town" && !pendingCombat && currentLoc && (
@@ -4075,6 +4118,7 @@ export default function App() {
                 location={currentLoc}
                 worldLocations={worldLocations}
                 player={player}
+                overlandActors={overlandActors}
                 onAcceptMission={handleAcceptMission}
                 onBuyItem={handleBuyItem}
                 onSellItem={handleSellItem}

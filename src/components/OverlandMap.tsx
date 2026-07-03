@@ -170,6 +170,20 @@ interface OverlandMapProps {
   onPlayerDeath?: (reason?: string) => void;
 }
 
+/**
+ * =========================================================================
+ *  OVERLAND MAP VIEW
+ * =========================================================================
+ * This component handles the 2D grid map the player walks around on.
+ * It manages travel calculations, biomes, and encounters with dynamic actors 
+ * (like bandits, traders, and bounty hunters).
+ * 
+ * SUGGESTION FOR NEW FEATURES:
+ * To add a new map encounter (e.g. "Random Gold Prospector"):
+ * 1. Add logic to spawn them in `utils/overlandActors.ts`.
+ * 2. They will render here in the grid automatically based on their X/Y coordinates.
+ * 3. Handle clicking them inside `handleActorInteraction` below.
+ */
 export const OverlandMap: React.FC<OverlandMapProps> = ({
   locations,
   overlandActors = [],
