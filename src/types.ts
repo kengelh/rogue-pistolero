@@ -22,6 +22,7 @@ export type LocationType =
   | "ranch"
   | "cavalry_fort"
   | "ephemeral_stash"
+  | "marked_grave"
   | "native_settlement";
 
 /**
@@ -373,6 +374,9 @@ export interface Location {
   leaderName?: string;
   expiresAtTime?: number;
   isHidden?: boolean;
+  graveInventory?: InventoryItem[];
+  gravePlayerName?: string;
+  graveLooted?: boolean;
 }
 
 export interface GridCell {

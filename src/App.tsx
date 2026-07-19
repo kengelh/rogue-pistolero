@@ -8,7 +8,8 @@ import hero1Img from "./assets/img_tactical/hero1.png";
 import hero2Img from "./assets/img_tactical/hero2.png";
 import hero3Img from "./assets/img_tactical/hero3.png";
 
-import { applyAutoBandaging } from "./utils/injuries";
+import { applyAutoBandaging, createInitialInjuries, applyTakeDamage } from "./utils/injuries";
+import { checkAndUnlockBadges } from "./utils/badges";
 import {
   Player,
   Location,
@@ -33,9 +34,9 @@ const getEffectiveMaxHp = (playerObj: Player) => {
   penaltyPercent = Math.min(0.9, penaltyPercent);
   return Math.floor(playerObj.maxHp * (1 - penaltyPercent));
 };
-import { generateWorldMap } from "./utils/procedural";
+import { generateWorldMap, generateShop } from "./utils/procedural";
 import { instantiateStorylineQuest } from "./utils/storylines";
-import { TRADE_GOODS, generateMarketBulletin } from "./utils/trade";
+import { TRADE_GOODS, generateMarketBulletin, CARRIAGES } from "./utils/trade";
 import { generateOverlandActors, tickOverlandActors } from "./utils/overlandActors";
 import { CharacterModal } from "./components/CharacterModal";
 import { InventoryModal } from "./components/InventoryModal";
@@ -96,6 +97,42 @@ const safeLocalStorage = {
     }
   },
 };
+
+function getQuestStageNarrative(type: string, stage: number, targetName: string): string {
+  if (type === "diplomacy") {
+    if (stage === 1) {
+      return "You arrive at the delegation camp in the dry sagebrush foothills. Apache warriors clad in traditional red clay paint watch you from high rimrocks, their rifles resting across their saddles. A young scout shivers under a blanket in the shade, pale from a festering wound. The elders watch your approach with cold, guarded eyes, waiting to see if you bring empty promises or real respect.";
+    } else if (stage === 2) {
+      return "The territory land office is thick with heavy cigar smoke and the dry scent of tax registries. The chief land clerk sits behind a tall walnut desk, deliberately ignoring you. Legal claims on his ledger threaten to seize the Apache ancestral canyonlands for the railroad corporation's heavy grading teams. The bureaucrat won't stamp the deeds without a fight or a hefty 'filing fee'.";
+    } else {
+      return "The formal boundary deeds are stamped and ready, but local tensions are balanced on a knife-edge. Hot-headed railroad crew bosses and local land speculators have formed a rowdy blockade outside the town line, looking to seize the papers. You must deliver the finalized agreements back to the treaty commissioners before lead flies.";
+    }
+  }
+
+  if (type === "myth") {
+    if (stage === 1) {
+      return "The town courthouse archives are a dusty labyrinth of iron-banded chests and tax receipts. The head cartographer, a bitter man with ink-stained fingers, guards the early military geological survey maps under lock and key. He mutters about official authorization, but a discreet bribe of cold coin might make him turn a blind eye.";
+    } else if (stage === 2) {
+      return "You hold the yellowed geological chart, but its landmarks are marked in cryptic prospector runes: a jagged lightning bolt, a double crescent, and a crescent sun. The local saloon is filled with card sharps and noisy cattle-drivers, but an old, half-blind prospector nursing an empty glass by the stove might know these mountains like the palm of his hand.";
+    } else {
+      return "You stand at the sheer cliff base of the Superstition Range, where the Lost Dutchman's shaft is concealed behind a massive, ancient mountain rockslide. Behind the fallen boulders, you can see a heavy, rusted iron vault door blocking the shaft, secured with a thick, mechanical iron lock that has resisted the desert grit for decades.";
+    }
+  }
+
+  if (["bounty", "robbery", "nest_clearing", "escort", "story_assassination", "story_heist"].includes(type)) {
+    return `Your scouts have tracked the target, ${targetName || "the outlaw gang"}, to a fortified hideout nestled deep in a crumbling gulch. Lookouts pace along the timber platforms with rifles drawn, while the smell of woodsmoke and cheap beans drifts from the camp. A frontal assault will be a bloody affair, but you might find a way to quiet their lookouts or sabotage their defenses first.`;
+  }
+
+  if (type === "story_investigation") {
+    return "The hot desert wind sweeps through the abandoned wash, burying clues beneath the shifting red sand. Somewhere nearby, wagon wheels cut deep into the dry earth, but the tracks are fading fast. You need to apply your tracking instincts, interrogate shifty local eye-witnesses, or analyze physical evidence to find where they fled.";
+  }
+
+  if (type === "story_delivery" || type === "story_exploration") {
+    return "You face a treacherous mountain pass. A sudden rockslide has blocked the lower wagon road, forcing you to choose between leading your horses along a narrow, crumbling cliffside ledge or sprinting across a burning timber railway bridge that creaks under the heavy wind.";
+  }
+
+  return "You look around the sun-bleached terrain for clues, signs of passage, or anyone who might hold a piece of the puzzle. The wilderness is silent, but every broken branch and discarded cartridge shell tells a story of its own.";
+}
 
 export default function App() {
   /**
@@ -233,6 +270,8 @@ export default function App() {
   } | null>(null);
 
   const triggerTip = (id: string, title: string, desc: string) => {
+    // Commented out explaining tips/screens for now per user request
+    /*
     setSeenTips((prev) => {
       if (!prev[id]) {
         setActiveTip({ id, title, desc });
@@ -240,6 +279,7 @@ export default function App() {
       }
       return prev;
     });
+    */
   };
 
   const [showWeaponBenchModal, setShowWeaponBenchModal] = useState(false);
@@ -542,6 +582,7 @@ export default function App() {
         targetLocationId: startingTown.id,
       };
       startingTown.quests = [tutorialMission, ...startingTown.quests];
+      startingTown.isExplored = true;
       setWorldLocations(freshMap);
       setOverlandActors(generateOverlandActors(freshMap));
       setCurrentLocationId(startingTown.id);
@@ -632,9 +673,42 @@ export default function App() {
             }
           }
 
-          // Filter out expired locations
+          // Filter out expired locations & organic drift of town prosperity
           setWorldLocations((prevLocs) => {
-            const nextLocs = prevLocs.filter(
+            const driftedLocs = prevLocs.map((loc) => {
+              if (daysPassed > 0 && loc.prosperity !== undefined && loc.type !== "ephemeral_stash") {
+                const baseline = loc.type === "ghost_town" ? 5 : loc.type === "boomtown" ? 80 : 50;
+                let drift = 0;
+                if (Math.random() < 0.4) {
+                  drift = Math.random() < 0.5 ? 2 : -2;
+                }
+                // Drift towards baseline
+                if (loc.prosperity < baseline) {
+                  drift += 1;
+                } else if (loc.prosperity > baseline) {
+                  drift -= 1;
+                }
+
+                const newProsperity = Math.max(0, Math.min(100, loc.prosperity + drift));
+                let newFaction = loc.controllingFaction;
+                if (newProsperity > 60 && loc.type !== "outlaw_haven" && loc.type !== "native_settlement") {
+                  newFaction = "lawmen";
+                } else if (newProsperity < 30 && loc.type !== "cavalry_fort" && loc.type !== "native_settlement") {
+                  newFaction = "outlaws";
+                }
+
+                const shopChanged = newProsperity !== loc.prosperity;
+                return {
+                  ...loc,
+                  prosperity: newProsperity,
+                  controllingFaction: newFaction,
+                  shop: shopChanged ? generateShop(loc.type, loc.risk, newProsperity, newFaction) : loc.shop,
+                };
+              }
+              return loc;
+            });
+
+            const nextLocs = driftedLocs.filter(
               (l) => !l.expiresAtTime || l.expiresAtTime > newHoursSurvived,
             );
             if (nextLocs.length < prevLocs.length) {
@@ -1761,8 +1835,17 @@ export default function App() {
     setWorldLocations((prevLocs) => {
       return prevLocs.map((loc) => {
         if (loc.id === currentLocationId && loc.economyProfile) {
+          const deltaProsperity = Math.min(5, Math.floor(quantity / 2) + (quantity > 0 ? 1 : 0));
+          const newProsperity = Math.min(100, (loc.prosperity || 50) + deltaProsperity);
+          let newFaction = loc.controllingFaction;
+          if (newProsperity > 60 && newFaction !== "lawmen" && loc.type !== "outlaw_haven" && loc.type !== "native_settlement") {
+            newFaction = "lawmen";
+          }
           return {
             ...loc,
+            prosperity: newProsperity,
+            controllingFaction: newFaction,
+            shop: generateShop(loc.type, loc.risk, newProsperity, newFaction),
             economyProfile: {
               ...loc.economyProfile,
               localInventory: {
@@ -1801,14 +1884,18 @@ export default function App() {
   ) => {
     advanceGameTime(4);
     setPlayer((prev) => {
-      addLogMessage(`Acquired Carriage! Max capacity increased.`, "system");
+      const carriageInfo = CARRIAGES[carriageType];
+      addLogMessage(`Acquired ${carriageInfo?.name || "Carriage"}! Max capacity increased.`, "system");
       return {
         ...prev,
         gold: prev.gold - cost,
         activeCarriage: {
           type: carriageType,
-          maxWeight: 0,
-          mountsRequired: { type: "donkey", count: 1 },
+          maxWeight: carriageInfo?.maxWeight || 0,
+          mountsRequired: {
+            type: carriageInfo?.requiredMount || "donkey",
+            count: carriageInfo?.reqCount || 1,
+          },
         },
       };
     });
@@ -2129,6 +2216,7 @@ export default function App() {
                   bankGold: 0,
                   prosperity: newProsperity,
                   controllingFaction: newFaction,
+                  shop: generateShop(loc.type, loc.risk, newProsperity, newFaction),
                 };
               }
               return loc;
@@ -2153,6 +2241,7 @@ export default function App() {
                 ...loc,
                 prosperity: newProsperity,
                 controllingFaction: newFaction,
+                shop: generateShop(loc.type, loc.risk, newProsperity, newFaction),
               };
             }
             return loc;
@@ -2434,26 +2523,7 @@ export default function App() {
       }));
       setActiveView("ambush_defeat");
     } else {
-      addLogMessage(
-        "☠️ Wounded in the deserts... Gila vultures picked your pockets clean.",
-        "danger",
-      );
-
-      const currentHighScore = parseInt(
-        safeLocalStorage.getItem("frontierHighScoreDays") || "0",
-        10,
-      );
-      if (
-        player.stats?.daysSurvived &&
-        player.stats.daysSurvived > currentHighScore
-      ) {
-        safeLocalStorage.setItem(
-          "frontierHighScoreDays",
-          player.stats.daysSurvived.toString(),
-        );
-      }
-
-      setActiveView("gameover");
+      handleDeath("being gunned down in a standoff duel");
     }
   };
 
@@ -2577,6 +2647,7 @@ export default function App() {
               ...loc,
               prosperity: newProsperity,
               controllingFaction: newFaction,
+              shop: generateShop(loc.type, loc.risk, newProsperity, newFaction),
             };
           }
           return loc;
@@ -3290,12 +3361,136 @@ export default function App() {
     });
   };
 
+  const handleDeath = (reason: string) => {
+    // 1. Create a marked grave at the player's last coordinates
+    const graveId = `grave_${Date.now()}`;
+    const graveName = `Grave of ${player.name || "a Nameless Drifter"}`;
+    const graveDescription = `A marked grave sits quietly in the wind. The weathered wooden marker reads: Here lies the body of ${player.name || "a Nameless Drifter"}. Died of ${reason || "desolation"} on Day ${player.stats?.daysSurvived || 0}.`;
+    
+    // Clone player's inventory for grave loot
+    const graveInv = player.inventory ? [...player.inventory] : [];
+
+    const newGrave: Location = {
+      id: graveId,
+      name: graveName,
+      type: "marked_grave",
+      x: playerX,
+      y: playerY,
+      risk: 0.1,
+      description: graveDescription,
+      hasTrain: false,
+      quests: [],
+      shop: [],
+      bankGold: 0,
+      bankGuards: 0,
+      isExplored: true,
+      prosperity: 0,
+      graveInventory: graveInv,
+      gravePlayerName: player.name || "Nameless Drifter",
+      graveLooted: false,
+    };
+
+    // 2. Persist this grave by adding it to worldLocations
+    setWorldLocations((prev) => [...prev, newGrave]);
+
+    addLogMessage(
+      reason || `☠️ ${player.name} died in the deserts... Gila vultures picked their pockets clean.`,
+      "danger",
+    );
+
+    const currentHighScore = parseInt(
+      safeLocalStorage.getItem("frontierHighScoreDays") || "0",
+      10,
+    );
+    if (
+      player.stats?.daysSurvived &&
+      player.stats.daysSurvived > currentHighScore
+    ) {
+      safeLocalStorage.setItem(
+        "frontierHighScoreDays",
+        player.stats.daysSurvived.toString(),
+      );
+    }
+
+    // Badge Check on death / legacy achievements
+    checkAndUnlockBadges(player, (badge) => {
+      addLogMessage(`🏆 LEGACY BADGE UNLOCKED: ${badge.icon} ${badge.name} - ${badge.description}`, "loot");
+    });
+
+    setActiveView("gameover");
+  };
+
+  const handleLootGrave = (locId: string) => {
+    setWorldLocations((prevLocs) => {
+      const locIndex = prevLocs.findIndex((l) => l.id === locId);
+      if (locIndex === -1) return prevLocs;
+      const loc = prevLocs[locIndex];
+
+      if (loc.graveLooted) {
+        addLogMessage("🪦 This grave contains no further inheritance.", "system");
+        return prevLocs;
+      }
+
+      const inv = loc.graveInventory || [];
+      if (inv.length === 0) {
+        addLogMessage("🪦 You search the grave, but find no belongings remaining.", "system");
+        const updatedLoc = { ...loc, graveLooted: true };
+        const nextLocs = [...prevLocs];
+        nextLocs[locIndex] = updatedLoc;
+        return nextLocs;
+      }
+
+      // Select 1 random item
+      const randomIndex = Math.floor(Math.random() * inv.length);
+      const lootedItem = inv[randomIndex];
+
+      // Give to player
+      setPlayer((prevPlayer) => {
+        const nextInv = [...prevPlayer.inventory];
+        const existingIdx = nextInv.findIndex((i) => i.id === lootedItem.id);
+        if (existingIdx !== -1) {
+          nextInv[existingIdx] = {
+            ...nextInv[existingIdx],
+            count: (nextInv[existingIdx].count || 1) + (lootedItem.count || 1),
+          };
+        } else {
+          nextInv.push({ ...lootedItem });
+        }
+        return {
+          ...prevPlayer,
+          inventory: nextInv,
+        };
+      });
+
+      addLogMessage(`🎁 INHERITANCE: You respectfully paid your respects and recovered "${lootedItem.name}" from ${loc.gravePlayerName || 'the fallen drifter'}'s grave.`, "loot");
+
+      const updatedLoc = { ...loc, graveLooted: true };
+      const nextLocs = [...prevLocs];
+      nextLocs[locIndex] = updatedLoc;
+      return nextLocs;
+    });
+  };
+
   // Restart trigger
   const handleRestart = () => {
-    const freshMap = generateWorldMap();
-    setWorldLocations(freshMap);
-    setOverlandActors(generateOverlandActors(freshMap));
-    setCurrentLocationId(freshMap[0].id);
+    // Lineage & Inheritance: Keep the same map!
+    // But pick a new starting position from existing towns (that is not where they died)
+    const towns = worldLocations.filter((loc) => loc.type === "town");
+    const currentLoc = worldLocations.find((loc) => loc.id === currentLocationId);
+    let startingTown = towns[0];
+    if (towns.length > 1 && currentLoc) {
+      // pick a different town if possible
+      const availableTowns = towns.filter((t) => t.id !== currentLoc.id);
+      if (availableTowns.length > 0) {
+        startingTown = availableTowns[Math.floor(Math.random() * availableTowns.length)];
+      }
+    }
+
+    if (startingTown) {
+      setCurrentLocationId(startingTown.id);
+      setPlayerX(startingTown.x);
+      setPlayerY(startingTown.y);
+    }
 
     setPlayer({
       gender: "male",
@@ -3974,28 +4169,7 @@ export default function App() {
                   }
                 }}
                 onConfrontBoss={(mission) => setConfrontationModal(mission)}
-                onPlayerDeath={(reason) => {
-                  addLogMessage(
-                    reason || `☠️ ${player.name} died in the deserts... Gila vultures picked their pockets clean.`,
-                    "danger",
-                  );
-
-                  const currentHighScore = parseInt(
-                    safeLocalStorage.getItem("frontierHighScoreDays") || "0",
-                    10,
-                  );
-                  if (
-                    player.stats?.daysSurvived &&
-                    player.stats.daysSurvived > currentHighScore
-                  ) {
-                    safeLocalStorage.setItem(
-                      "frontierHighScoreDays",
-                      player.stats.daysSurvived.toString(),
-                    );
-                  }
-
-                  setActiveView("gameover");
-                }}
+                onPlayerDeath={handleDeath}
               />
             </div>
           )}
@@ -4121,6 +4295,7 @@ export default function App() {
                 onRevealLocation={handleRevealLocation}
                 onReturnToMap={() => setActiveView("map")}
                 onRaidStash={handleRaidStash}
+                onLootGrave={handleLootGrave}
                 onTriggerTip={triggerTip}
                 onStartCombat={(type, risk, mission, provokedNpcId, provokedNpcName) => {
                   if (type === "duel" || type === "ambush") {
@@ -4896,100 +5071,110 @@ export default function App() {
         {/* Confrontation Modal */}
         {confrontationModal && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-0 sm:p-4 z-[100] backdrop-blur-sm">
-            <div className="bg-[#f4ead5] w-full h-full sm:h-auto max-w-xl border-0 sm:border-4 border-[#3d2d21] sm:rounded-sm p-4 sm:p-6 shadow-[0_0_40px_rgba(0,0,0,0.8)] max-h-screen sm:max-h-[90vh] flex flex-col overflow-hidden">
-              <h2 className="text-base sm:text-xl font-bold uppercase text-red-700 tracking-widest font-serif mb-4 flex items-center gap-2 border-b-2 border-red-900/20 pb-2 shrink-0">
+            <div className="bg-[#f4ead5] w-full h-full sm:h-auto max-w-xl border-0 sm:border-4 border-[#3d2d21] sm:rounded-sm p-4 sm:p-6 shadow-[0_0_40px_rgba(0,0,0,0.8)] max-h-screen sm:max-h-[90vh] flex flex-col overflow-hidden relative">
+              <button
+                onClick={() => setConfrontationModal(null)}
+                className="absolute top-4 right-4 text-[#5a4838] hover:text-[#3d2d21] font-bold p-1 cursor-pointer z-50 text-base"
+                title="Step away for now"
+              >
+                ✕
+              </button>
+
+              <h2 className="text-base sm:text-xl font-bold uppercase text-red-700 tracking-widest font-serif mb-4 flex items-center gap-2 border-b-2 border-red-900/20 pb-2 shrink-0 pr-8">
                 <Skull className="text-red-700 shrink-0" size={18} /> Confrontation:{" "}
                 <span className="truncate">{confrontationModal.targetName}</span>
               </h2>
               
-              <div className="text-xs sm:text-sm font-sans text-[#4d3a2b] space-y-4 mb-4 overflow-y-auto flex-1 pr-1 custom-scrollbar">
-                <p>
-                  You step into the dilapidated hideout, hand hovering closely
-                  over your revolver. Before you can draw,{" "}
-                  {confrontationModal.targetName} steps out from the shadows,
-                  hands raised but not surrendered.
-                </p>
-                {confrontationModal.twistType === "ROBIN_HOOD" && (
-                  <p className="font-bold italic">
-                    "Wait! The money I took from the railway isn't for me! Look
-                    around—I'm feeding the starving miners the company
-                    abandoned. If you take me in, they all die."
+              <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-0 space-y-4">
+                <div className="text-xs sm:text-sm font-sans text-[#4d3a2b] space-y-4">
+                  <p>
+                    You step into the dilapidated hideout, hand hovering closely
+                    over your revolver. Before you can draw,{" "}
+                    {confrontationModal.targetName} steps out from the shadows,
+                    hands raised but not surrendered.
                   </p>
-                )}
-                {confrontationModal.twistType === "FRAMED_INNOCENT" && (
-                  <p className="font-bold italic">
-                    "I didn't do it! The Sheriff is corrupt, he pinned the
-                    robbery on me because I found his ledger! If you kill me,
-                    the real outlaws win."
+                  {confrontationModal.twistType === "ROBIN_HOOD" && (
+                    <p className="font-bold italic">
+                      "Wait! The money I took from the railway isn't for me! Look
+                      around—I'm feeding the starving miners the company
+                      abandoned. If you take me in, they all die."
+                    </p>
+                  )}
+                  {confrontationModal.twistType === "FRAMED_INNOCENT" && (
+                    <p className="font-bold italic">
+                      "I didn't do it! The Sheriff is corrupt, he pinned the
+                      robbery on me because I found his ledger! If you kill me,
+                      the real outlaws win."
+                    </p>
+                  )}
+                  {confrontationModal.twistType === "MYSTICAL_CULTIST" && (
+                    <p className="font-bold italic">
+                      "Your guns mean nothing to the spirits of the Badlands. The
+                      blood I spill is payment to the earth. Join us, or become
+                      nourishment."
+                    </p>
+                  )}
+                  <p className="text-[10px] sm:text-xs mt-4 italic text-zinc-600 font-serif">
+                    You hold the contract for ${confrontationModal.rewardGold}.
+                    Returning with their head (or capturing them) fulfills it. But
+                    you could also turn a blind eye...
                   </p>
-                )}
-                {confrontationModal.twistType === "MYSTICAL_CULTIST" && (
-                  <p className="font-bold italic">
-                    "Your guns mean nothing to the spirits of the Badlands. The
-                    blood I spill is payment to the earth. Join us, or become
-                    nourishment."
-                  </p>
-                )}
-                <p className="text-[10px] sm:text-xs mt-4 italic text-zinc-600 font-serif">
-                  You hold the contract for ${confrontationModal.rewardGold}.
-                  Returning with their head (or capturing them) fulfills it. But
-                  you could also turn a blind eye...
-                </p>
-              </div>
+                </div>
 
-              <div className="space-y-2.5 shrink-0 pt-2 border-t border-[#bfae96]/40">
-                <button
-                  onClick={() => {
-                    setConfrontationModal(null);
-                    setCombatType("bounty");
-                    setCombatRisk(0.85);
-                    setActiveMissionTarget(confrontationModal);
-                    setPreCombatView(activeView);
-                    setActiveView("combat");
-                    addLogMessage(
-                      `⚔️ No deals for outlaws. You draw your weapon on ${confrontationModal.targetName}!`,
-                      "danger",
-                    );
-                  }}
-                  className="w-full py-2.5 sm:py-2 bg-[#dfd4bd] hover:bg-red-900 hover:text-white text-[#664d36] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-left px-4 cursor-pointer rounded-xs"
-                >
-                  1. "I'm just here for the bounty." (Initiate Combat)
-                </button>
+                <div className="space-y-2.5 pt-2 border-t border-[#bfae96]/40">
+                  <button
+                    onClick={() => {
+                      setConfrontationModal(null);
+                      setCombatType("bounty");
+                      setCombatRisk(0.85);
+                      setActiveMissionTarget(confrontationModal);
+                      setPreCombatView(activeView);
+                      setActiveView("combat");
+                      addLogMessage(
+                        `⚔️ No deals for outlaws. You draw your weapon on ${confrontationModal.targetName}!`,
+                        "danger",
+                      );
+                    }}
+                    className="w-full py-2.5 sm:py-2 bg-[#dfd4bd] hover:bg-red-900 hover:text-white text-[#664d36] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-left px-4 cursor-pointer rounded-xs"
+                  >
+                    1. "I'm just here for the bounty." (Initiate Combat)
+                  </button>
 
-                <button
-                  onClick={() => {
-                    setConfrontationModal(null);
+                  <button
+                    onClick={() => {
+                      setConfrontationModal(null);
 
-                    // Clean target note from our inventory
-                    setPlayer((prev) => ({
-                      ...prev,
-                      inventory: prev.inventory.filter(
-                        (item) => item.id !== confrontationModal.id,
-                      ),
-                      reputation: Math.max(0, prev.reputation - 15), // Cost of failing the bounty
-                    }));
-
-                    // Mark Quest as Betrayal
-                    setWorldLocations((prev) =>
-                      prev.map((loc) => ({
-                        ...loc,
-                        quests: loc.quests.map((q) =>
-                          q.id === confrontationModal.id
-                            ? { ...q, questState: "ALLIED_WITH_TARGET" }
-                            : q,
+                      // Clean target note from our inventory
+                      setPlayer((prev) => ({
+                        ...prev,
+                        inventory: prev.inventory.filter(
+                          (item) => item.id !== confrontationModal.id,
                         ),
-                      })),
-                    );
+                        reputation: Math.max(0, prev.reputation - 15), // Cost of failing the bounty
+                      }));
 
-                    addLogMessage(
-                      `🤝 You lowered your weapon, letting ${confrontationModal.targetName} walk away. The town won't be happy. (-15 Reputation)`,
-                      "system",
-                    );
-                  }}
-                  className="w-full py-2.5 sm:py-2 bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#3d2d21] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-left px-4 cursor-pointer rounded-xs"
-                >
-                  2. "Turn around and run. I never saw you." (Let them go)
-                </button>
+                      // Mark Quest as Betrayal
+                      setWorldLocations((prev) =>
+                        prev.map((loc) => ({
+                          ...loc,
+                          quests: loc.quests.map((q) =>
+                            q.id === confrontationModal.id
+                              ? { ...q, questState: "ALLIED_WITH_TARGET" }
+                              : q,
+                          ),
+                        })),
+                      );
+
+                      addLogMessage(
+                        `🤝 You lowered your weapon, letting ${confrontationModal.targetName} walk away. The town won't be happy. (-15 Reputation)`,
+                        "system",
+                      );
+                    }}
+                    className="w-full py-2.5 sm:py-2 bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#3d2d21] font-bold text-xs uppercase tracking-widest border border-[#bfae96] transition-colors text-left px-4 cursor-pointer rounded-xs"
+                  >
+                    2. "Turn around and run. I never saw you." (Let them go)
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -4998,8 +5183,19 @@ export default function App() {
         {/* Investigation Modal */}
         {investigationModal && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-0 sm:p-4 z-[100] backdrop-blur-sm">
-            <div className="bg-[#f4ead5] w-full h-full sm:h-auto max-w-xl border-0 sm:border-4 border-[#3d2d21] sm:rounded-sm p-4 sm:p-6 shadow-[0_0_40px_rgba(0,0,0,0.8)] max-h-screen sm:max-h-[90vh] flex flex-col overflow-hidden">
-              <h2 className="text-base sm:text-xl font-bold uppercase text-[#8c6b0c] tracking-widest font-serif mb-4 flex items-center gap-2 border-b-2 border-[#bfae96] pb-2 shrink-0">
+            <div className="bg-[#f4ead5] w-full h-full sm:h-auto max-w-xl border-0 sm:border-4 border-[#3d2d21] sm:rounded-sm p-4 sm:p-6 shadow-[0_0_40px_rgba(0,0,0,0.8)] max-h-screen sm:max-h-[90vh] flex flex-col overflow-hidden relative">
+              <button
+                onClick={() => {
+                  setInvestigationModal(null);
+                  setInvestigationOutcome(null);
+                }}
+                className="absolute top-4 right-4 text-[#5a4838] hover:text-[#3d2d21] font-bold p-1 cursor-pointer z-50 text-base"
+                title="Step away for now"
+              >
+                ✕
+              </button>
+
+              <h2 className="text-base sm:text-xl font-bold uppercase text-[#8c6b0c] tracking-widest font-serif mb-4 flex items-center gap-2 border-b-2 border-[#bfae96] pb-2 shrink-0 pr-8">
                 <Compass className="text-[#8c6b0c] shrink-0" size={18} /> Investigation:{" "}
                 <span className="truncate">{investigationModal.title}</span>
               </h2>
@@ -5179,33 +5375,31 @@ export default function App() {
                 </div>
               ) : (
                 // Interactive Choices Screen
-                <div className="flex flex-col flex-1 overflow-hidden">
-                  <div className="text-xs sm:text-sm font-sans text-[#4d3a2b] space-y-3 sm:space-y-4 mb-4 overflow-y-auto flex-1 pr-1 custom-scrollbar">
+                <div className="flex flex-col flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-0 space-y-4">
+                  <div className="text-xs sm:text-sm font-sans text-[#4d3a2b] space-y-3 sm:space-y-4">
                     {investigationModal.stage !== undefined ? (
                       <>
                         <div className="bg-amber-100/50 border border-amber-300 p-2 text-[10px] font-semibold rounded-sm text-amber-900 uppercase tracking-wider flex justify-between shrink-0">
                           <span>Quest Stage: {investigationModal.stage} of {investigationModal.maxStages}</span>
                           <span>{investigationModal.type?.toUpperCase()}</span>
                         </div>
-                        <p className="font-serif italic text-sm sm:text-base font-semibold leading-relaxed text-[#2d2119]">
-                          "{investigationModal.stageInstructions?.[(investigationModal.stage || 1) - 1] || investigationModal.description}"
+                        <p className="font-serif text-amber-950 font-bold text-xs sm:text-sm uppercase tracking-wide border-l-2 border-amber-600 pl-2 py-0.5">
+                          Objective: "{investigationModal.stageInstructions?.[(investigationModal.stage || 1) - 1] || investigationModal.description}"
+                        </p>
+                        <p className="font-serif text-xs sm:text-sm leading-relaxed text-[#4d3a2b] bg-[#ede1c7]/40 p-3 sm:p-4 rounded border border-[#bfae96]/30 shadow-inner">
+                          {getQuestStageNarrative(investigationModal.type || "", investigationModal.stage, investigationModal.targetName || "")}
                         </p>
                       </>
                     ) : (
                       <>
-                        <p>
-                          You decided to investigate the rumor regarding{" "}
-                          {investigationModal.targetName}. You look around the area for
-                          clues or anyone who might know something.
-                        </p>
-                        <p className="text-xs mt-4 italic text-zinc-600 font-serif">
-                          You can attempt to gather information or use your intuition. What do you do?
+                        <p className="font-serif text-xs sm:text-sm leading-relaxed text-[#4d3a2b] bg-[#ede1c7]/40 p-3 sm:p-4 rounded border border-[#bfae96]/30 shadow-inner">
+                          {getQuestStageNarrative(investigationModal.type || "", 1, investigationModal.targetName || "")}
                         </p>
                       </>
                     )}
                   </div>
 
-                  <div className="space-y-2.5 shrink-0 pt-2 border-t border-[#bfae96]/40">
+                  <div className="space-y-2.5 pt-2 border-t border-[#bfae96]/40">
                     {/* Render Choices based on Quest Type and Stage */}
                     {(() => {
                       const type = investigationModal.type;
@@ -5220,10 +5414,149 @@ export default function App() {
                       const hasLockpick = player.inventory?.some((i) => i.id === "lockpick" && (i.count ?? 1) >= 1);
                       const hasCanteen = player.inventory?.some((i) => i.id === "canteen" && (i.count ?? 1) >= 1);
 
+                      // Dynamic Skill Check Button Helper
+                      const renderSkillCheckButton = (
+                        label: string,
+                        skillKey: string, // "scoutingSkill" | "medicineSkill" | "pistolSkill" | "rifleSkill" | "reloadSkill"
+                        skillLabel: string,
+                        baseChance: number,
+                        bonusPerLvl: number,
+                        successText: string,
+                        failureText: string,
+                        options?: {
+                          goldReward?: number;
+                          xpReward?: number;
+                          hpPenalty?: number;
+                          goldPenalty?: number;
+                          injuryPart?: "HEAD" | "TORSO" | "LEFT_ARM" | "RIGHT_ARM" | "LEGS";
+                          repChangeSuccess?: number;
+                          repChangeFailure?: number;
+                          consumeItem?: string;
+                        }
+                      ) => {
+                        const currentLvl = (
+                          skillKey === "scoutingSkill"
+                            ? (player.scoutingSkill || 0)
+                            : ((player as any)[skillKey + "Level"] || 0)
+                        );
+                        const successChance = Math.min(100, baseChance + bonusPerLvl * currentLvl);
+
+                        const handleRoll = () => {
+                          const roll = Math.floor(Math.random() * 100) + 1;
+                          const isSuccess = roll <= successChance;
+
+                          if (options?.consumeItem) {
+                            consumeInventoryItem(options.consumeItem, 1);
+                          }
+
+                          if (isSuccess) {
+                            setPlayer((prev) => {
+                              const goldGain = options?.goldReward || 0;
+                              const xpGain = options?.xpReward || 0;
+                              
+                              const totalXp = prev.xp + xpGain;
+                              let level = prev.level;
+                              let nextXpToNext = prev.xpToNextLevel;
+                              let actualXp = totalXp;
+                              let newMaxHp = prev.maxHp;
+                              let newHp = prev.hp;
+
+                              if (totalXp >= nextXpToNext && level < 10) {
+                                level += 1;
+                                actualXp = Math.max(0, totalXp - nextXpToNext);
+                                nextXpToNext = Math.round(nextXpToNext * 2.1);
+                                const staminaGain = Math.floor(Math.random() * 4) + 2;
+                                newMaxHp = Math.min(100, prev.maxHp + staminaGain);
+                                newHp = newHp + (newMaxHp - prev.maxHp);
+                                addLogMessage(
+                                  `⚡ LEVEL UP! You reached level ${level}! Max HP +${newMaxHp - prev.maxHp}, +0.5 AP.`,
+                                  "reputation"
+                                );
+                              }
+
+                              const nextRep = Math.max(-100, Math.min(100, (prev.reputation || 0) + (options?.repChangeSuccess || 0)));
+
+                              return {
+                                ...prev,
+                                gold: prev.gold + goldGain,
+                                xp: actualXp,
+                                level,
+                                maxHp: newMaxHp,
+                                hp: newHp,
+                                skillPoints: level > prev.level ? (prev.skillPoints || 0) + 1 : (prev.skillPoints || 0),
+                                xpToNextLevel: nextXpToNext,
+                                reputation: nextRep
+                              };
+                            });
+
+                            setInvestigationOutcome({
+                              text: `🎲 ROLL: ${roll} vs ${successChance}% Chance. [SUCCESS]\n\n${successText}`,
+                              success: true,
+                              rewardText: `Rewards secured: ${options?.goldReward ? `+$${options.goldReward} Gold ` : ""}${options?.xpReward ? `+${options.xpReward} XP ` : ""}${options?.repChangeSuccess ? `${options.repChangeSuccess > 0 ? "+" : ""}${options.repChangeSuccess} Reputation ` : ""}`
+                            });
+                          } else {
+                            setPlayer((prev) => {
+                              const hpPenalty = options?.hpPenalty || 0;
+                              const goldPenalty = options?.goldPenalty || 0;
+                              const nextRep = Math.max(-100, Math.min(100, (prev.reputation || 0) + (options?.repChangeFailure || 0)));
+                              
+                              let finalHp = Math.max(5, prev.hp - hpPenalty);
+                              let finalGold = Math.max(0, prev.gold - goldPenalty);
+
+                              let updatedInjuries = prev.injuries;
+                              if (options?.injuryPart) {
+                                const currentInjuries = prev.injuries || createInitialInjuries(prev.maxHp || 50);
+                                updatedInjuries = applyTakeDamage(currentInjuries, hpPenalty || 15, options.injuryPart).updatedInjuries;
+                              }
+
+                              return {
+                                ...prev,
+                                hp: finalHp,
+                                gold: finalGold,
+                                reputation: nextRep,
+                                injuries: updatedInjuries
+                              };
+                            });
+
+                            const injuryLabel = options?.injuryPart ? `[CRITICAL INJURY: Suffered ${options.injuryPart} wound!]` : "";
+
+                            setInvestigationOutcome({
+                              text: `🎲 ROLL: ${roll} vs ${successChance}% Chance. [FAILURE]\n\n${failureText}`,
+                              success: false,
+                              rewardText: `Penalties suffered: ${options?.hpPenalty ? `-${options.hpPenalty} HP ` : ""}${options?.goldPenalty ? `-$${options.goldPenalty} Gold ` : ""}${injuryLabel} ${options?.repChangeFailure ? `${options.repChangeFailure} Reputation ` : ""}`
+                            });
+                          }
+                        };
+
+                        return (
+                          <button
+                            onClick={handleRoll}
+                            className="w-full text-left border rounded-sm p-3 transition-all bg-[#dfd4bd] hover:bg-[#d5c9b0] text-[#3d2d21] border-[#bfae96] shadow-xs cursor-pointer flex flex-col space-y-1"
+                          >
+                            <div className="flex justify-between items-center w-full">
+                              <span className="font-bold text-[10px] sm:text-xs text-[#8c6b0c] uppercase font-serif flex items-center gap-1">
+                                🎲 {skillLabel} Check (Lvl {currentLvl}/3)
+                              </span>
+                              <span className="font-mono text-[9px] font-bold bg-[#3d2d21]/10 px-1.5 py-0.5 rounded text-[#3d2d21]">
+                                {successChance}% Chance
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-semibold text-stone-700 leading-snug">
+                              {label}
+                            </p>
+                            <div className="flex gap-2 pt-0.5 border-t border-[#bfae96]/20 text-[9px] uppercase font-mono">
+                              {options?.xpReward && <span className="text-emerald-700 font-bold">+{options.xpReward} XP</span>}
+                              {options?.goldReward && <span className="text-emerald-700 font-bold">+${options.goldReward} Gold</span>}
+                              {options?.hpPenalty && <span className="text-rose-700 font-bold">Risk: -{options.hpPenalty} HP {options.injuryPart && `& ${options.injuryPart} Injury`}</span>}
+                            </div>
+                          </button>
+                        );
+                      };
+
                       if (type === "myth") {
                         if (stage === 1) {
                           return (
-                            <>
+                            <div className="space-y-2">
                               <button
                                 disabled={player.gold < 35}
                                 onClick={() => {
@@ -5240,7 +5573,7 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                1. Bribe the Chief Archivist for $35 {player.gold < 35 && "(Insufficient Gold)"}
+                                1. Slide a $35 bribe across the desk to make the Archivist turn a blind eye {player.gold < 35 && "(Insufficient Gold)"}
                               </button>
 
                               <button
@@ -5259,36 +5592,35 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                2. Have your Scout sift through maps {!hasScout && "(Requires Scout in Posse)"}
+                                2. Order your Posse Scout to leverage their training and locate the cartography maps {!hasScout && "(Requires Scout in Posse)"}
                               </button>
 
-                              <button
-                                onClick={() => {
-                                  const success = Math.random() < 0.65;
-                                  if (success) {
-                                    setInvestigationOutcome({
-                                      text: "You spend 3 long hours coughing in the dust of the archives, but eventually find an old land survey describing the Dutchman's campsite landmarks!",
-                                      success: true,
-                                      rewardText: "Success Rate: 65%"
-                                    });
-                                  } else {
-                                    setPlayer(prev => ({ ...prev, hp: Math.max(5, prev.hp - 10) }));
-                                    setInvestigationOutcome({
-                                      text: "You spent hours sifting through dry grain receipts, but found nothing of value. You leave with a terrible dust allergy and a splitting headache.",
-                                      success: false,
-                                      rewardText: "Lost -10 HP from severe physical strain"
-                                    });
-                                  }
-                                }}
-                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96] transition-all"
-                              >
-                                3. Search manually (Take hours, 65% Success rate)
-                              </button>
-                            </>
+                              {renderSkillCheckButton(
+                                "Spend hours painstakingly searching through the moldy, uncatalogued territory registry cabinets yourself.",
+                                "scoutingSkill",
+                                "Scouting & Perception",
+                                50,
+                                15,
+                                "You spend 3 long hours coughing in the dust of the archives, but your keen eye spots an old catalog misfiling. You successfully find the correct 1860 land survey!",
+                                "You spent hours sifting through dry, moldy grain receipts but found nothing. You leave with a terrible dust allergy and a severe migraine.",
+                                { xpReward: 50, hpPenalty: 10, injuryPart: "HEAD" }
+                              )}
+
+                              {renderSkillCheckButton(
+                                "Brush back your coat to rest your hand on your holster, silently pressuring the archivist to cooperate.",
+                                "pistolSkill",
+                                "Pistol Handling",
+                                40,
+                                15,
+                                "You gently brush aside your holster coat. The archivist gulps, sweats profusely, and scrambles to slide the confidential map across the table for free!",
+                                "The archivist panics and blows a copper whistle! Marshal deputies arrive instantly. You are fined $40 for brandishing and get thrown out.",
+                                { xpReward: 60, goldPenalty: 40, repChangeFailure: -10 }
+                              )}
+                            </div>
                           );
                         } else if (stage === 2) {
                           return (
-                            <>
+                            <div className="space-y-2">
                               <button
                                 disabled={player.gold < 50}
                                 onClick={() => {
@@ -5305,7 +5637,7 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                1. Hire local university scholar ($50) {player.gold < 50 && "(Insufficient Gold)"}
+                                1. Hire a passing university antiquities professor for $50 to translate the markings {player.gold < 50 && "(Insufficient Gold)"}
                               </button>
 
                               <button
@@ -5324,36 +5656,35 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                2. Trade Premium Whiskey to an old pioneer {!hasWhiskey && "(Requires Premium Whiskey)"}
+                                2. Treat the old pioneer to a double pour of Premium Whiskey to get him talking {!hasWhiskey && "(Requires Premium Whiskey)"}
                               </button>
 
-                              <button
-                                onClick={() => {
-                                  const success = Math.random() < 0.50;
-                                  if (success) {
-                                    setInvestigationOutcome({
-                                      text: "You sit down, staring intensely at the maps. Suddenly, you remember seeing a similar rune in a military journal from your scout days. It references a water spring!",
-                                      success: true,
-                                      rewardText: "Success Rate: 50%"
-                                    });
-                                  } else {
-                                    setPlayer(prev => ({ ...prev, hp: Math.max(5, prev.hp - 15) }));
-                                    setInvestigationOutcome({
-                                      text: "You spend hours trying to decode the symbols, but the patterns merge and blur. You get a fierce migraine from eye-strain.",
-                                      success: false,
-                                      rewardText: "Lost -15 HP from severe mental strain"
-                                    });
-                                  }
-                                }}
-                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96] transition-all"
-                              >
-                                3. Study the markings yourself (50% Success rate)
-                              </button>
-                            </>
+                              {renderSkillCheckButton(
+                                "Stare intensely at the carving patterns to cross-reference the mountain lines with known regional landmarks.",
+                                "scoutingSkill",
+                                "Scouting & Perception",
+                                40,
+                                20,
+                                "Suddenly, you remember a military canyon journal from your scouting days! The markings represent ancient mountain spring paths pointing directly to the Whispering Cave.",
+                                "You spend 4 exhausting hours squinting at the sun-glared rock carvings. You fail to decode the runes and leave with a fierce migraine.",
+                                { xpReward: 60, hpPenalty: 12, injuryPart: "HEAD" }
+                              )}
+
+                              {renderSkillCheckButton(
+                                "Apply your botanical and mineral expertise to analyze the sulfur and soil traces on the stone carving.",
+                                "medicineSkill",
+                                "Field Medicine",
+                                45,
+                                15,
+                                "You extract trace sulfur and limestone residue on the markings, proving the landmarks indicate sulfuric hot springs near the cave entrance!",
+                                "You accidentally inhale toxic sulfur-rock dust while scraping the pigment. Your chest burns and you cough up black dust.",
+                                { xpReward: 50, hpPenalty: 15, injuryPart: "TORSO" }
+                              )}
+                            </div>
                           );
                         } else {
                           return (
-                            <>
+                            <div className="space-y-2">
                               <button
                                 disabled={!hasDynamite}
                                 onClick={() => {
@@ -5370,7 +5701,7 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                1. Blast the caved-in entrance with Dynamite {!hasDynamite && "(Requires Stick of Dynamite)"}
+                                1. Rig and detonate a stick of heavy prospecting Dynamite to blow the caved-in entrance wide open {!hasDynamite && "(Requires Stick of Dynamite)"}
                               </button>
 
                               <button
@@ -5389,23 +5720,51 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                2. Carefully pick the caved-in iron locks {!hasLockpick && "(Requires Skeleton Keys)"}
+                                2. Use a set of fine skeleton keys to carefully pick the intricate mechanical lock on the iron mine door {!hasLockpick && "(Requires Skeleton Keys)"}
                               </button>
 
                               <button
                                 onClick={() => {
-                                  setPlayer(prev => ({ ...prev, hp: Math.max(5, prev.hp - 30) }));
+                                  const currentInjuries = player.injuries || createInitialInjuries(player.maxHp || 50);
+                                  const { updatedInjuries } = applyTakeDamage(currentInjuries, 30, "RIGHT_ARM");
+                                  setPlayer(prev => ({ 
+                                    ...prev, 
+                                    hp: Math.max(5, prev.hp - 30),
+                                    injuries: updatedInjuries
+                                  }));
                                   setInvestigationOutcome({
-                                    text: "You dig and lift heavy boulders with bare hands and sheer muscle. Your palms bleed and your back is strained, but you successfully clear a small crawlway to the chest!",
+                                    text: "You dig and lift heavy jagged boulders with your bare hands. Your palms bleed, your shoulders pop, and you suffer severe physical strain, but you successfully clear a crawlway to the chest!",
                                     success: true,
-                                    rewardText: "Lost -30 HP from extreme physical exhaustion"
+                                    rewardText: "Lost -30 HP and suffered a CRIPPLED RIGHT_ARM from heavy lifting exhaustion"
                                   });
                                 }}
-                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-amber-700 border-[#bfae96] transition-all"
+                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-amber-700 border-[#bfae96] transition-all cursor-pointer"
                               >
-                                3. Clear heavy rubble by hand (Guaranteed Success, Costs -30 HP)
+                                3. Manually lift and clear the caved-in jagged mountain boulders with your bare hands (Guaranteed, Costs -30 HP & arm injury)
                               </button>
-                            </>
+
+                              {renderSkillCheckButton(
+                                "Fire a precise, high-impact bullet at the rotting wooden support lintel to trigger a controlled rock-slide collapse.",
+                                "pistolSkill",
+                                "Pistol Handling",
+                                45,
+                                15,
+                                "A masterful quick shot! The bullet snaps the dry-rotted lintel beam perfectly, causing the heavy rocks to cascade away safely, exposing the chest!",
+                                "Your bullet shatters the timber too violently! The entire rock ceiling collapses over your head, pelted by falling stones.",
+                                { xpReward: 70, hpPenalty: 25, injuryPart: "TORSO" }
+                              )}
+
+                              {renderSkillCheckButton(
+                                "Search the surrounding rock face crevices for a hidden, narrow air ventilation flue to squeeze inside.",
+                                "scoutingSkill",
+                                "Scouting & Perception",
+                                40,
+                                15,
+                                "You locate a narrow natural fissure near the top of the ridge! You squeeze through the tight gap and drop safely into the gold vault behind the blocked door.",
+                                "You get wedged tightly in the narrow crevice! You struggle for hours to break free, scraping your ribs and straining your torso.",
+                                { xpReward: 65, hpPenalty: 18, injuryPart: "TORSO" }
+                              )}
+                            </div>
                           );
                         }
                       }
@@ -5413,7 +5772,7 @@ export default function App() {
                       if (type === "diplomacy") {
                         if (stage === 1) {
                           return (
-                            <>
+                            <div className="space-y-2">
                               <button
                                 disabled={!hasCanteen}
                                 onClick={() => {
@@ -5430,7 +5789,7 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                1. Offer cold Trail Canteen water and rations {!hasCanteen && "(Requires Trail Canteen)"}
+                                1. Offer cool water from your Trail Canteen and share travel rations as a traditional peace gesture {!hasCanteen && "(Requires Trail Canteen)"}
                               </button>
 
                               <button
@@ -5449,36 +5808,35 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                2. Have your Medic tend to a sick tribal scout {!hasMedic && "(Requires Medic in Posse)"}
+                                2. Instruct your Posse Medic to tend to the wounded warrior's infected fever without weapons {!hasMedic && "(Requires Medic in Posse)"}
                               </button>
 
-                              <button
-                                onClick={() => {
-                                  const success = Math.random() < 0.60;
-                                  if (success) {
-                                    setInvestigationOutcome({
-                                      text: "You raise empty hands and speak clearly of the Painted Canyon. Your level-headed composure convinces them that you represent peace.",
-                                      success: true,
-                                      rewardText: "Success Rate: 60%"
-                                    });
-                                  } else {
-                                    setPlayer(prev => ({ ...prev, hp: Math.max(5, prev.hp - 15) }));
-                                    setInvestigationOutcome({
-                                      text: "The scouts are highly nervous and unleash warning arrows. A brief physical scuffle occurs before they finally accept your peaceful credentials.",
-                                      success: false,
-                                      rewardText: "Lost -15 HP in physical parley struggle"
-                                    });
-                                  }
-                                }}
-                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96] transition-all"
-                              >
-                                3. Parley unarmed using formal sign language (60% Success rate)
-                              </button>
-                            </>
+                              {renderSkillCheckButton(
+                                "Parley unarmed using formal hand-signs and dry-land gestures of goodwill.",
+                                "scoutingSkill",
+                                "Scouting & Perception",
+                                45,
+                                15,
+                                "Your smooth hand gestures and steady composure successfully convey your peace mission. The warriors nod and escort you safely to their chief.",
+                                "You execute an accidental hostile gesture! The startled scouts fire a volley of warning arrows. You escape, but tumble down a rocky ravine.",
+                                { xpReward: 60, hpPenalty: 15, injuryPart: "LEGS" }
+                              )}
+
+                              {renderSkillCheckButton(
+                                "Harvest and compound local Snakeroot herbs to safely treat a wounded scout's snakebite.",
+                                "medicineSkill",
+                                "Field Medicine",
+                                35,
+                                20,
+                                "Your advanced herbal remedy breaks the fever and draws out the venom. The clan honors you as a healing friend (+15 Reputation)!",
+                                "You harvest a poisonous look-alike weed! The scout reacts violently to the toxin. The furious warriors shoot warning arrows, wounding your arm.",
+                                { xpReward: 75, hpPenalty: 20, injuryPart: "RIGHT_ARM", repChangeFailure: -10 }
+                              )}
+                            </div>
                           );
                         } else if (stage === 2) {
                           return (
-                            <>
+                            <div className="space-y-2">
                               <button
                                 disabled={player.gold < 100}
                                 onClick={() => {
@@ -5495,7 +5853,7 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                1. Pay land registry fee of $100 to settle deeds {player.gold < 100 && "(Insufficient Gold)"}
+                                1. Dig into your saddlebags and pay the official $100 land registry fee to register the deeds legally {player.gold < 100 && "(Insufficient Gold)"}
                               </button>
 
                               <button
@@ -5514,36 +5872,35 @@ export default function App() {
                                     : "bg-stone-300 text-stone-500 border-stone-200 cursor-not-allowed"
                                 }`}
                               >
-                                2. Have your Bodyguard intimidate the bureau clerk {!hasBodyguard && "(Requires Bodyguard in Posse)"}
+                                2. Order your giant Bodyguard to crack their knuckles and loom over the clerk to waive the fee {!hasBodyguard && "(Requires Bodyguard in Posse)"}
                               </button>
 
-                              <button
-                                onClick={() => {
-                                  const success = Math.random() < 0.65;
-                                  if (success) {
-                                    setInvestigationOutcome({
-                                      text: "You debate federal treaty codes eloquently. The bureau is forced to acknowledge the Apache hunting boundary line, granting the deed.",
-                                      success: true,
-                                      rewardText: "Success Rate: 65%"
-                                    });
-                                  } else {
-                                    setPlayer(prev => ({ ...prev, gold: prev.gold - 50 }));
-                                    setInvestigationOutcome({
-                                      text: "The legal arguments are locked in bureaucracy. You are forced to pay $50 for a fast-track hearing to push the deeds through anyway.",
-                                      success: true,
-                                      rewardText: "Success rate check failed: Cost $50 in fast-track court fees"
-                                    });
-                                  }
-                                }}
-                                className="w-full py-2 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2a8ec4] border-[#bfae96] transition-all"
-                              >
-                                3. Debate legal treaty borders with clerk (65% Success rate)
-                              </button>
-                            </>
+                              {renderSkillCheckButton(
+                                "Scan the land office maps for railway surveyor loopholes and historic 1872 treaties.",
+                                "scoutingSkill",
+                                "Scouting & Perception",
+                                40,
+                                15,
+                                "You locate a blatant boundary drafting error in the 1872 map. The red-faced clerk is legally forced to sign the deeds and waive the $100 fee!",
+                                "The clerk dismisses your map findings as amateur nonsense. You are charged a $50 fine for stalling official county business.",
+                                { xpReward: 60, goldPenalty: 50 }
+                              )}
+
+                              {renderSkillCheckButton(
+                                "Perform a lightning-fast hand swap to swipe and stamp the pending deeds 'APPROVED' while the clerk is distracted.",
+                                "reloadSkill",
+                                "Speed Reloading",
+                                45,
+                                15,
+                                "Lightning fast! You swipe the eviction mandate and stamp it with the red 'APPROVED' seal. The clerk files it away without noticing!",
+                                "Caught red-handed! The clerk screams. You are arrested and forced to pay a $75 bail fine, losing -10 Reputation.",
+                                { xpReward: 60, goldPenalty: 75, repChangeFailure: -10 }
+                              )}
+                            </div>
                           );
                         } else {
                           return (
-                            <>
+                            <div className="space-y-2">
                               <button
                                 onClick={() => {
                                   setInvestigationOutcome({
@@ -5552,11 +5909,33 @@ export default function App() {
                                     rewardText: "Final Signature Seated"
                                   });
                                 }}
-                                className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-emerald-800 border-emerald-600 transition-all"
+                                className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-emerald-800 border-emerald-600 transition-all cursor-pointer"
                               >
-                                1. Present the deeds and sign Treaty of the Painted Canyon
+                                1. Present the signed county deeds and formally sign the Treaty of the Painted Canyon to secure peace
                               </button>
-                            </>
+
+                              {renderSkillCheckButton(
+                                "Guide the diplomatic delegation safely through high-altitude cliffside trails to slip past the rowdy railway blockade.",
+                                "scoutingSkill",
+                                "Scouting & Perception",
+                                50,
+                                15,
+                                "Your expert guiding keeps the elders silent and safe. You completely bypass the angry rail workers and deliver the treaty in high honor!",
+                                "A loose shale slide alerts the blockading crew. You are forced to run a gauntlet of angry rocks and wild warning shots, suffering bruises.",
+                                { xpReward: 80, hpPenalty: 12, injuryPart: "LEGS", repChangeSuccess: 20 }
+                              )}
+
+                              {renderSkillCheckButton(
+                                "Put on a spectacular, lightning-fast demonstration of revolver trick-shooting to overawe and scatter the blockade agitators.",
+                                "pistolSkill",
+                                "Pistol Handling",
+                                45,
+                                15,
+                                "You fan your revolver, shooting the hats off three agitators in a split second! The stunned blockade breaks and scatters in absolute awe.",
+                                "Your revolver jams at the worst possible moment! The emboldened agitators laugh and pelt your horse with rocks as you scramble back.",
+                                { xpReward: 90, hpPenalty: 15, injuryPart: "LEFT_ARM" }
+                              )}
+                            </div>
                           );
                         }
                       }
@@ -5573,7 +5952,7 @@ export default function App() {
 
                       if (isCombat) {
                         return (
-                          <>
+                          <div className="space-y-2">
                             <button
                               onClick={() => {
                                 setInvestigationModal(null);
@@ -5581,84 +5960,162 @@ export default function App() {
                               }}
                               className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-red-800 hover:bg-red-700 text-stone-100 border-red-600 transition-all flex items-center justify-between cursor-pointer"
                             >
-                              <span>⚔️ Draw weapons and assault the hideout!</span>
+                              <span>⚔️ Kick open the door, draw weapons, and lead a direct frontal assault on the outlaw camp!</span>
                               <span className="text-[10px] bg-red-950 px-1.5 py-0.5 rounded text-red-300">Initiate Combat</span>
                             </button>
 
-                            <button
-                              onClick={() => {
-                                const roll = Math.random() < 0.7;
-                                if (roll) {
-                                  setInvestigationOutcome({
-                                    text: `You quietly scope out the perimeter of ${investigationModal.targetName}'s hideout. You find a side window left unlatched, allowing you to catch them completely off-guard!`,
-                                    success: true,
-                                    rewardText: "Gain Surprise Advantage: Enemy starting turn delayed!"
-                                  });
-                                } else {
-                                  setPlayer((prev) => ({ ...prev, hp: Math.max(5, prev.hp - 10) }));
-                                  setInvestigationOutcome({
-                                    text: `While trying to sneak around the back alley, you accidentally knock over a pile of iron pans. A lookout spots you and fires a warning shot that grazes your arm!`,
-                                    success: false,
-                                    rewardText: "Failed Stealth Check: Lost 10 HP. Outlaws are now alerted!"
-                                  });
-                                }
-                              }}
-                              className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#0f4c81] border-[#bfae96] transition-all cursor-pointer"
-                            >
-                              🔍 Sneak around to gain tactical advantage (70% success)
-                            </button>
+                            {renderSkillCheckButton(
+                              "Slip through the rocky gulch watch-guard blind spots in the shadows to silently disable their warning alarms.",
+                              "scoutingSkill",
+                              "Scouting & Perception",
+                              50,
+                              15,
+                              "Success! You map out their snipers and silently take down their lookout. You find $50 gold and gain surprise advantage in the coming battle!",
+                              "Snap! A dry branch alerts a sentry. They fire a shotgun point-blank. You take 18 damage and start combat surrounded.",
+                              { xpReward: 50, goldReward: 50, hpPenalty: 18, injuryPart: "TORSO" }
+                            )}
 
-                            <button
-                              onClick={() => {
-                                setInvestigationOutcome({
-                                  text: `You sit down at the local saloon and ask about ${investigationModal.targetName}. A tipsy customer whispers: "Pete? Oh, he's a lightweight! Stole a donkey when he was drunk, and now he is hidin' behind the stables with a terrible hangover."`,
-                                  success: true,
-                                  rewardText: "Rumor gathered: Target weakness uncovered (Hangover)"
-                                });
-                              }}
-                              className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#0f4c81] border-[#bfae96] transition-all cursor-pointer"
-                            >
-                              💬 Ask the locals for a rumor about the target
-                            </button>
-                          </>
+                            {renderSkillCheckButton(
+                              "Use lightning-fast sleight of hand to stealthily snatch the weapon cabinet keys from a sleeping sentry's belt.",
+                              "reloadSkill",
+                              "Speed Reloading",
+                              40,
+                              15,
+                              "Flawless speed! You snatch the keys, lock their ammunition drawers, and slip away. In the upcoming battle, enemies deal 25% less damage!",
+                              "The guard wakes up! They slash your hand with a knife, dealing 15 damage before you can scramble away to start combat.",
+                              { xpReward: 60, hpPenalty: 15, injuryPart: "RIGHT_ARM" }
+                            )}
+
+                            {renderSkillCheckButton(
+                              "Identify and harvest wild toxic Nightshade berries to poison the gang's water supply and weaken them before the gunfight.",
+                              "medicineSkill",
+                              "Field Medicine",
+                              35,
+                              20,
+                              "You distill a tasteless paralytic syrup and poison their flask. In the upcoming combat, enemies start with 20% reduced max HP!",
+                              "You spill the toxic botanical oils onto your bare skin. You suffer severe chemical burns, losing 15 HP and numbing your arm.",
+                              { xpReward: 70, hpPenalty: 15, injuryPart: "LEFT_ARM" }
+                            )}
+                          </div>
+                        );
+                      }
+
+                      // Story Investigation style quests
+                      if (type === "story_investigation") {
+                        return (
+                          <div className="space-y-2">
+                            {renderSkillCheckButton(
+                              "Meticulously search the sun-bleached desert wash for forgotten wagon tracks and boot prints.",
+                              "scoutingSkill",
+                              "Scouting & Perception",
+                              50,
+                              15,
+                              "Your tracking expertise pays off! You uncover a buried leather dispatch bag with +$60 gold and find exactly where the outlaws went.",
+                              "You get lost in a swirling dust storm, losing your orientation and stepping right into a concealed iron bear-trap!",
+                              { xpReward: 60, goldReward: 60, hpPenalty: 20, injuryPart: "LEGS" }
+                            )}
+
+                            {renderSkillCheckButton(
+                              "Examine the deep lacerations and torn fabric on the victim's clothing to deduce the attacker's weapon and stance.",
+                              "medicineSkill",
+                              "Field Medicine",
+                              45,
+                              15,
+                              "You determine the weapon was a left-handed miner's pickaxe from Coal Ridge, bypassing days of search! Gained a premium herb pouch.",
+                              "You misdiagnose the patterns, wasting hours searching the wrong sector. You suffer a physical exhaustion headache.",
+                              { xpReward: 50, hpPenalty: 10, injuryPart: "HEAD" }
+                            )}
+
+                            {renderSkillCheckButton(
+                              "Gently rest your hand on your polished revolver holster to pressure the shifty saloon eye-witness into telling the truth.",
+                              "pistolSkill",
+                              "Pistol Handling",
+                              40,
+                              20,
+                              "You lock eyes and tap your revolver. The trembling witness confesses the entire outpost setup, saving you immense risk!",
+                              "The witness panics, draws a hidden derringer, and shoots you in a wild scuffle before leaping out the window!",
+                              { xpReward: 70, hpPenalty: 15, injuryPart: "LEFT_ARM" }
+                            )}
+                          </div>
+                        );
+                      }
+
+                      // Story Delivery or Exploration style quests
+                      if (type === "story_delivery" || type === "story_exploration") {
+                        return (
+                          <div className="space-y-2">
+                            {renderSkillCheckButton(
+                              "Carefully guide your horses across a narrow, crumbling cliffside ledge to bypass the blocked main road.",
+                              "scoutingSkill",
+                              "Scouting & Perception",
+                              50,
+                              15,
+                              "You guide the pack horse flawlessly, arriving hours ahead of schedule! You find a stashed cash bag with +$80 gold.",
+                              "A sudden landslide sweeps your pony's legs. You plunge 15 feet down a shale cliff, crushing your ribs.",
+                              { xpReward: 80, goldReward: 80, hpPenalty: 25, injuryPart: "TORSO" }
+                            )}
+
+                            {renderSkillCheckButton(
+                              "Dash through a blazing, collapsing timber railway bridge to retrieve the trapped merchant cargo.",
+                              "reloadSkill",
+                              "Speed Reloading",
+                              35,
+                              20,
+                              "Incredible speed! You sprint across the burning ties, secure the cargo crate, and leap to safety as the structure collapses!",
+                              "The burning timbers shatter beneath you! You plunge into the rocky shallow stream, suffering terrible burns.",
+                              { xpReward: 100, goldReward: 100, hpPenalty: 30, injuryPart: "LEGS" }
+                            )}
+
+                            {renderSkillCheckButton(
+                              "Harvest local wild cooling roots and compound a soothing liniment to push your exhausted horses through dry alkali flats.",
+                              "medicineSkill",
+                              "Field Medicine",
+                              50,
+                              15,
+                              "Your anti-venom works flawlessly when a scout is bitten! You even sell your remaining vials to passing traders for $45.",
+                              "Your anti-venom compound was improperly balanced. You suffer toxic fever and deep, agonizing arm inflammation.",
+                              { xpReward: 60, goldReward: 45, hpPenalty: 15, injuryPart: "RIGHT_ARM" }
+                            )}
+                          </div>
                         );
                       }
 
                       // Scavenge or generic single-stage resolution
                       return (
-                        <>
-                          <button
-                            onClick={() => {
-                              const questTitle = investigationModal.title || "the investigation";
-                              const textNarrative = questTitle.toLowerCase().includes("relic")
-                                ? `You execute a thorough search of the area. After dusting off desert sand, sifting through camp debris, and searching behind weathered red canyon rocks, you successfully locate the sacred objects! The ancient Apache relics are safe in your possession, preserved from desecration.`
-                                : `You spend hours meticulously surveying the terrain. Following the faint clues and tracks left behind, you successfully uncover exactly what you came here for, hidden safely beneath a heavy rock shelf. Your efforts have paid off!`;
+                        <div className="space-y-2">
+                          {renderSkillCheckButton(
+                            "Scan the perimeter and track subtle shifts in the sandy earth to locate the buried treasure cache.",
+                            "scoutingSkill",
+                            "Scouting & Perception",
+                            45,
+                            15,
+                            "Your perception is flawless. You spot a weathered rock shelf and dig up a fully intact cache of gold coins!",
+                            "You dig in a nest of toxic desert hornets! You are stung repeatedly on your face and neck.",
+                            { xpReward: 60, goldReward: 50, hpPenalty: 15, injuryPart: "HEAD" }
+                          )}
 
-                              setInvestigationOutcome({
-                                text: textNarrative,
-                                success: true,
-                                rewardText: `🏆 Secured: +${investigationModal.rewardGold || 100} Gold and +${investigationModal.rewardXp || 50} XP! (Claim Reward)`
-                              });
-                            }}
-                            className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#2e7d32] border-[#2e7d32]/30 transition-all cursor-pointer"
-                          >
-                            🔍 "Investigate carefully..." (Complete Quest & Claim Reward)
-                          </button>
- 
-                          <button
-                            onClick={() => {
-                              setInvestigationOutcome({
-                                text: `You spend time asking the townspeople about this investigation. An elderly settler tells you: "Ah, that legend's been around for decades. Many tried to locate it, but only the brave find the truth!"`,
-                                success: true,
-                                rewardText: "Uncovered historic folklore: Gained deep insight!",
-                                isFlavor: true
-                              });
-                            }}
-                            className="w-full py-2.5 px-4 text-left border rounded-sm text-xs font-bold uppercase bg-[#dfd4bd] hover:bg-[#dcd1b9] text-[#0f4c81] border-[#bfae96] transition-all cursor-pointer"
-                          >
-                            💬 Ask locals for folklore & rumors
-                          </button>
-                        </>
+                          {renderSkillCheckButton(
+                            "Use a set of fine steel pick tools to carefully pop open the rusted iron locking mechanism on the found chest.",
+                            "reloadSkill",
+                            "Speed Reloading",
+                            40,
+								15,
+                            "With surgical precision, you slide the lock pins back. The lid pops open, revealing +$75 gold bonus!",
+                            "The rusty locking mechanism snaps your pick and triggers a spring-loaded poison needle trap!",
+                            { xpReward: 70, goldReward: 75, hpPenalty: 12, injuryPart: "RIGHT_ARM" }
+                          )}
+
+                          {renderSkillCheckButton(
+                            "Use clean linen bandages and wild mountain sage to treat the festering leg wound of a stranded traveler.",
+                            "medicineSkill",
+                            "Field Medicine",
+                            50,
+                            15,
+                            "You clean the wound, apply local herbs, and bandage them perfectly. Grateful, they hand over the keys to their stashed lockbox!",
+                            "The settler goes into septic shock during your amateur procedure. They panic, lash out with a knife, and run into the desert.",
+                            { xpReward: 50, hpPenalty: 15, injuryPart: "LEFT_ARM", repChangeFailure: -10 }
+                          )}
+                        </div>
                       );
                     })()}
 

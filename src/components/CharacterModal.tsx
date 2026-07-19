@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Player } from "../types";
+import { BADGES, getUnlockedBadges } from "../utils/badges";
 import overlandImg from "../assets/images/overland_1780566810461.png";
 import {
   Shield,
@@ -368,6 +369,41 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
                 )}
               </div>
 
+              {/* Frontier Legacy Badges */}
+              <div className="bg-[#f4ead5] text-[#3d2d21] p-4 rounded-sm border border-[#bfae96] shadow-md space-y-2">
+                <div className="text-[10px] text-[#664d36] uppercase font-serif font-bold tracking-widest border-b border-[#bfae96]/60 pb-1">
+                  🏆 Frontier Legacy Badges
+                </div>
+
+                <div className="grid grid-cols-1 gap-1.5 max-h-[160px] overflow-y-auto pr-1">
+                  {BADGES.map((b) => {
+                    const isUnlocked = getUnlockedBadges().includes(b.id) || b.check(player);
+                    return (
+                      <div
+                        key={b.id}
+                        className={`p-2 border rounded-sm text-[11px] flex items-start gap-2.5 transition-all ${
+                          isUnlocked
+                            ? "bg-[#e8dec7] border-[#8c6b0c]/50 text-[#3d2d21]"
+                            : "bg-[#e8dec7]/40 border-[#bfae96]/20 text-[#3d2d21]/40"
+                        }`}
+                      >
+                        <span className={`text-lg leading-none ${isUnlocked ? "opacity-100" : "opacity-30 filter grayscale"}`}>
+                          {b.icon}
+                        </span>
+                        <div>
+                          <strong className={`font-serif uppercase tracking-wider text-xs block ${isUnlocked ? "text-[#8c6b0c]" : "text-stone-500"}`}>
+                            {b.name} {isUnlocked && "✔️"}
+                          </strong>
+                          <span className="text-[10px] leading-relaxed block mt-0.5">
+                            {b.description}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Visual Appearance Customization */}
               <div className="bg-[#f4ead5] text-[#3d2d21] p-4 rounded-sm border border-[#bfae96] shadow-md space-y-2">
                 <div className="text-[10px] text-[#664d36] uppercase font-serif font-bold tracking-widest border-b border-[#bfae96]/60 pb-1 flex justify-between">
@@ -709,7 +745,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
               {/* Posse Members & Mounts Card */}
               <div className="bg-[#f4ead5] text-[#3d2d21] p-4 rounded-sm border border-[#bfae96] shadow-md space-y-3">
                 <div className="text-[10px] text-[#664d36] uppercase font-serif font-bold tracking-widest border-b border-[#bfae96]/60 pb-1">
-                  👥 Posse Crew ({player.posse ? player.posse.length : 0} / 3)
+                  👥 Posse Crew ({player.posse ? player.posse.length : 0} / 5)
                 </div>
 
                 {!player.posse || player.posse.length === 0 ? (

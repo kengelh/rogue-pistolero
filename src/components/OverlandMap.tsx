@@ -106,9 +106,9 @@ export const getBiomeAt = (x: number, y: number) => {
     name: "Searing Desert",
     icon: <Sun size={16} />,
     speedModifier: 0.9,
-    hydrationModifier: 1.75,
+    hydrationModifier: 3.0,
     color: desertColor,
-    desc: "Searing dunes. High water consumption!",
+    desc: "Searing dunes. Extreme water consumption & severe dehydration risk!",
   };
 };
 
@@ -218,6 +218,11 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
     null,
   );
   const autoTravelTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Optimized dual-pane navigation state for mobile screens
+  const [mobilePaneMode, setMobilePaneMode] = useState<"left" | "right" | "dual">("dual");
+  const [hideUpperDash, setHideUpperDash] = useState(false);
+  const [showTrailInstrumentsModal, setShowTrailInstrumentsModal] = useState(false);
 
   // Overland Actor interaction state
   const [activeOverlandActorId, setActiveOverlandActorId] = useState<string | null>(null);
@@ -429,7 +434,7 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
           const isDifficult = prev.difficulty === "difficult";
           if (isDifficult) {
             const roll = Math.random();
-            if (roll < 0.25) {
+            if (roll < 0.50) { // 50% chance for hardcore (difficult) mode
               setTimeout(() => {
                 setShowStrangerModal(true);
               }, 50);
@@ -442,7 +447,7 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
                 }
               }, 50);
             }
-          } else {
+          } else { // 100% chance for normal difficulty
             setTimeout(() => {
               setShowStrangerModal(true);
             }, 50);
@@ -530,6 +535,76 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
 
   const [travelByNight, setTravelByNight] = useState(false);
   const [showCampFire, setShowCampFire] = useState(false);
+  const [pendingCampChoice, setPendingCampChoice] = useState<{ targetHourDay: number, shouldRestNightTravel: boolean } | null>(null);
+
+  const handleStartCamping = (campType: "cold" | "fire", targetHourDay: number, shouldRestNightTravel: boolean) => {
+    setPendingCampChoice(null);
+    setShowCampFire(true);
+    let tick = 0;
+    const totalTicks = 50;
+    const totalSleepHours = targetHourDay - gameTimeHour;
+    const hourDelta = totalSleepHours / totalTicks;
+
+    const fastForwardInterval = setInterval(() => {
+      tick++;
+      advanceGameTime(hourDelta);
+
+      if (tick >= totalTicks) {
+        clearInterval(fastForwardInterval);
+        setShowCampFire(false);
+
+        const startingTown = locations && locations.length > 0 ? locations[0] : null;
+        const isNearStartingTown = startingTown 
+          ? Math.hypot(playerX - startingTown.x, playerY - startingTown.y) < 25.0
+          : false;
+
+        let ambushChance = 0.05; // 5% default chance
+        if (campType === "cold") {
+          ambushChance = 0.0;
+        } else if (campType === "fire") {
+          ambushChance = 0.20;
+        }
+
+        if ((player.hydration ?? 100) <= 0 && campType === "cold") ambushChance = 0.05; // slightly higher if exhausted
+
+        if (isNearStartingTown) ambushChance = 0.0;
+
+        if (Math.random() < ambushChance) {
+          addLogMessage(
+            `⚠️ AMBUSH AT CAMP: Outlaws jumped your camp while resting!`,
+            "danger",
+          );
+          onStartCombat("camp_ambush", 0.65);
+        } else {
+          if ((player.hydration ?? 100) > 0) {
+            let baseHeal = campType === "fire" ? player.maxHp : Math.ceil(player.maxHp * 0.3);
+            let campHeal = baseHeal;
+            
+            if ((player.medicineSkillLevel || 0) >= 3) {
+              campHeal += 20; 
+            } else if ((player.medicineSkillLevel || 0) >= 1) {
+              campHeal += 10; 
+            }
+
+            onUpdatePlayer((p) => ({
+              ...p,
+              hp: Math.min(p.maxHp, p.hp + campHeal),
+            }));
+            addLogMessage(
+              `⛺ CAMPED SAFELY (${campType === "fire" ? "Fire" : "Cold"}): You safely rested until ${shouldRestNightTravel ? "dusk" : "dawn"} (+${campHeal} HP).${(player.medicineSkillLevel || 0) >= 1 ? " (Field Medicine Bonus!)" : ""}`,
+              "system",
+            );
+          } else {
+            addLogMessage(
+              `⛺ CAMPED EXHAUSTED: You survived the night but couldn't recover without water (Dehydrated).`,
+              "system",
+            );
+          }
+        }
+      }
+    }, 50);
+  };
+
   const [showStrangerModal, setShowStrangerModal] = useState(false);
 
   const handleRescueByStranger = () => {
@@ -598,6 +673,9 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         onUpdatePlayer(p => ({ ...p, gold: p.gold - 50 }));
         addLogMessage(`💸 TOLL PAID: You paid $50 trail toll to ${actor.name}.`, "travel");
         setActiveOverlandActorId(null);
+        if (setOverlandActors) {
+          setOverlandActors(prev => prev.map(a => a.id === actor.id ? { ...a, isDefeated: true } : a));
+        }
       } else {
         addLogMessage(`📢 "You don't have enough gold!" snarls ${actor.name}. "Prepare to bleed!"`, "danger");
         setActiveOverlandActorId(null);
@@ -609,6 +687,9 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         onUpdatePlayer(p => ({ ...p, gold: p.gold - bribeAmount, bounty: 0 }));
         addLogMessage(`💸 BRIBE ACCEPTED: You paid ${actor.name} $${bribeAmount} gold to shred your wanted posters.`, "system");
         setActiveOverlandActorId(null);
+        if (setOverlandActors) {
+          setOverlandActors(prev => prev.map(a => a.id === actor.id ? { ...a, isDefeated: true } : a));
+        }
       } else {
         addLogMessage(`📢 "I ain't cheap, Stranger!" says Silas. "Face the law!"`, "danger");
       }
@@ -743,8 +824,6 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
       setIsAutoTraveling(false);
       setAutoTravelTargetId(null);
 
-      setShowCampFire(true);
-
       let targetHourDay = 7;
       if (shouldRestNightTravel) {
         targetHourDay = 17;
@@ -752,60 +831,7 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         targetHourDay = gameTimeHour >= 21 ? 24 + 7 : 7;
       }
 
-      let tick = 0;
-      const totalTicks = 50;
-      const totalSleepHours = targetHourDay - gameTimeHour;
-      const hourDelta = totalSleepHours / totalTicks;
-
-      const fastForwardInterval = setInterval(() => {
-        tick++;
-        advanceGameTime(hourDelta);
-
-        if (tick >= totalTicks) {
-          clearInterval(fastForwardInterval);
-          setShowCampFire(false);
-          
-          const startingTown = locations && locations.length > 0 ? locations[0] : null;
-          const isNearStartingTown = startingTown 
-            ? Math.hypot(playerX - startingTown.x, playerY - startingTown.y) < 25.0
-            : false;
-
-          let ambushChance = 0.05; // 5% default chance
-          if ((player.hydration ?? 100) <= 0) ambushChance = 0.10; // max 10% when dehydrated/exhausted
-          if (isNearStartingTown) ambushChance = 0.0; // absolutely no ambush in starting safe zone
-
-          if (Math.random() < ambushChance) {
-            setShowCampFire(false);
-            addLogMessage(
-              `⚠️ AMBUSH AT CAMP: Outlaws jumped your camp while resting!`,
-              "danger",
-            );
-            onStartCombat("camp_ambush", 0.65);
-          } else {
-            if ((player.hydration ?? 100) > 0) {
-              let campHeal = 20;
-              if ((player.medicineSkillLevel || 0) >= 3) {
-                campHeal = 40; // Miracle Remedy: +100% healing
-              } else if ((player.medicineSkillLevel || 0) >= 1) {
-                campHeal = 30; // Poultice Preparation: +50% healing
-              }
-              onUpdatePlayer((p) => ({
-                ...p,
-                hp: Math.min(p.maxHp, p.hp + campHeal),
-              }));
-              addLogMessage(
-                `⛺ CAMPED SAFELY: You safely rested until ${shouldRestNightTravel ? "dusk" : "dawn"} (+${campHeal} HP).${(player.medicineSkillLevel || 0) >= 1 ? " (Field Medicine Bonus!)" : ""}`,
-                "system",
-              );
-            } else {
-              addLogMessage(
-                `⛺ CAMPED EXHAUSTED: You survived the night but couldn't recover without water (Dehydrated).`,
-                "system",
-              );
-            }
-          }
-        }
-      }, 50);
+      setPendingCampChoice({ targetHourDay, shouldRestNightTravel });
 
       return false; // Did not travel, just camped
     }
@@ -841,6 +867,24 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
     applyStepConsumption(biome, stepHours);
     checkTopographyDiscovery(nextX, nextY);
     checkChunkExpansion(nextX, nextY);
+
+    // High-Stakes Geography: Rare loot stashes in Searing Desert
+    if (biome.name === "Searing Desert" && Math.random() < 0.005) {
+      const rareItems = [
+        { id: "gold_nugget", name: "Gold Nugget", value: 100 },
+        { id: "rare_revolver", name: "Pearl-Handled Revolver", value: 250 },
+        { id: "ancient_relic", name: "Apache War Totem", value: 300 }
+      ];
+      const foundItem = rareItems[Math.floor(Math.random() * rareItems.length)];
+      onUpdatePlayer((p) => ({
+        ...p,
+        gold: p.gold + foundItem.value,
+      }));
+      addLogMessage(
+        `💎 DESERT STASH FOUND: You survived the scorching heat and uncovered a hidden stash containing a ${foundItem.name} (worth $${foundItem.value})!`,
+        "system"
+      );
+    }
 
     advanceGameTime(player.hasHorse ? 0.3 : 0.6);
 
@@ -1499,6 +1543,8 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         return <span className="text-[#c4451a] font-extrabold text-sm">⚔</span>;
       case "ephemeral_stash":
         return <span className="text-[#8c6b0c] font-extrabold text-sm">✖</span>;
+      case "marked_grave":
+        return <span className="text-[#4a3928] font-extrabold text-sm">🪦</span>;
       case "cavalry_fort":
         return <span className="text-blue-800 font-extrabold text-sm">♜</span>;
       case "native_settlement":
@@ -1526,6 +1572,8 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         return "text-[#c4451a]";
       case "ephemeral_stash":
         return "text-[#8c6b0c]";
+      case "marked_grave":
+        return "text-[#4a3928]";
       default:
         return "text-[#3d2d21]";
     }
@@ -1549,6 +1597,8 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         return "Hostile Gang Outpost";
       case "ephemeral_stash":
         return "Temporary Cache / Hideout";
+      case "marked_grave":
+        return "Marked Grave of a Fallen Drifter";
       default:
         return "Region Hub";
     }
@@ -1573,49 +1623,145 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
   };
 
   return (
-    <div
-      id="overland-map-screen"
-      className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full"
-    >
-      {/* Interactive Map Layout */}
-      <div className="lg:col-span-8 flex flex-col bg-[#f4ead5] border border-[#bfae96] rounded-sm p-4 h-full min-h-[480px]">
-        <div className="flex items-center justify-between mb-4 pb-2.5 border-b border-[#bfae96]">
-          <div className="flex items-center gap-2">
-            <Compass size={16} className="text-[#8c6b0c] animate-spin-slow" />
-            <h2 className="text-xs font-serif tracking-wider font-bold text-[#8c6b0c] uppercase">
-              New Mexico Badlands Territory Chart
-            </h2>
-          </div>
-          <div className="hidden sm:flex gap-3 text-[9px] font-mono text-[#664d36] uppercase tracking-wider font-semibold">
-            <span className="flex items-center gap-1">
-              <span className="text-[#8c6b0c]">✦</span> Settlement
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="text-[#2a8ec4]">⚙</span> Railway
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="text-[#c4451a]">☠</span> Gang Haven
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="text-[#2a8ec4]">▲</span> Basin Oasis
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="text-[#664d36]">✝</span> Ruins
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="text-orange-400">⚒</span> Mine
-            </span>
+    <>
+      {pendingCampChoice && (
+        <div className="absolute inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-[#2a231d] border-2 border-[#bfae96] rounded-lg p-6 max-w-sm w-full shadow-[0_0_20px_rgba(0,0,0,0.8)]">
+            <h2 className="text-[#e8b923] text-xl font-bold uppercase mb-4 tracking-wider text-center drop-shadow-md">Set up Camp</h2>
+            <p className="text-[#d4c5b3] text-sm mb-6 text-center leading-relaxed">
+              The journey takes its toll. How will you spend your rest?
+            </p>
+            
+            <div className="space-y-3">
+              <button
+                onClick={() => handleStartCamping("cold", pendingCampChoice.targetHourDay, pendingCampChoice.shouldRestNightTravel)}
+                className="w-full text-left p-3 border border-[#bfae96]/40 bg-[#3a332d] hover:bg-[#4a433d] transition-colors rounded flex flex-col group cursor-pointer"
+              >
+                <span className="text-[#f4ead5] font-bold text-sm uppercase group-hover:text-white transition-colors">🥶 Cold Camp</span>
+                <span className="text-[#a49583] text-xs mt-1 leading-tight">Recover 30% HP. Sleep cold and hidden. Safe from ambushes.</span>
+              </button>
+
+              <button
+                onClick={() => handleStartCamping("fire", pendingCampChoice.targetHourDay, pendingCampChoice.shouldRestNightTravel)}
+                className="w-full text-left p-3 border border-[#e8b923]/50 bg-[#3a231d] hover:bg-[#4a231d] transition-colors rounded flex flex-col group cursor-pointer"
+              >
+                <span className="text-[#e8b923] font-bold text-sm uppercase group-hover:text-amber-300 transition-colors">🔥 Fire Camp</span>
+                <span className="text-[#d4a583] text-xs mt-1 leading-tight">Recover 100% HP. Warmth and food, but a 20% chance to attract an ambush.</span>
+              </button>
+            </div>
           </div>
         </div>
+      )}
+    <div className="flex flex-col gap-2 h-full w-full">
+      {/* View settings & Header toggle */}
+      <div className="bg-[#dcd1b9] border border-[#bfae96] p-1.5 rounded-sm shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-2">
+        {/* Mobile-optimized dual pane view selector (Visible only on mobile/tablet) */}
+        <div className="grid grid-cols-3 gap-1 flex-1 lg:hidden">
+          <button
+            onClick={() => setMobilePaneMode("left")}
+            className={`py-1.5 px-1 text-[10px] font-bold font-serif uppercase rounded-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1 border ${
+              mobilePaneMode === "left"
+                ? "bg-[#1a130f] text-[#dfd4bd] border-black"
+                : "bg-transparent text-[#1a130f]/60 hover:bg-[#120c0a]/5 border-transparent"
+            }`}
+          >
+            <span>🗺️</span>
+            <span>Map Only</span>
+          </button>
+          <button
+            onClick={() => setMobilePaneMode("dual")}
+            className={`py-1.5 px-1 text-[10px] font-bold font-serif uppercase rounded-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1 border ${
+              mobilePaneMode === "dual"
+                ? "bg-[#1a130f] text-[#dfd4bd] border-black"
+                : "bg-transparent text-[#1a130f]/60 hover:bg-[#120c0a]/5 border-transparent"
+            }`}
+          >
+            <span>⚖️</span>
+            <span>Dual Pane</span>
+          </button>
+          <button
+            onClick={() => setMobilePaneMode("right")}
+            className={`py-1.5 px-1 text-[10px] font-bold font-serif uppercase rounded-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1 border ${
+              mobilePaneMode === "right"
+                ? "bg-[#1a130f] text-[#dfd4bd] border-black"
+                : "bg-transparent text-[#1a130f]/60 hover:bg-[#120c0a]/5 border-transparent"
+            }`}
+          >
+            <span>📜</span>
+            <span>Commands</span>
+          </button>
+        </div>
 
-        {/* Dynamic Graphic SVG Map Container matching Immersive UI exactly */}
-        <div
-          className={`flex-1 bg-[radial-gradient(circle_at_center,_#e6d9b9_0%,_#d2bb95_100%)] border rounded-sm relative overflow-hidden group min-h-[380px] transition-all duration-300 ${
-            player.hydration <= 0
-              ? "border-red-600/80 shadow-[inset_0_0_35px_rgba(185,28,28,0.4)]"
-              : "border-[#bfae96]"
-          }`}
-        >
+        {/* Global Compact Option to hide everything above map */}
+        <div className="flex items-center justify-between md:justify-end gap-3 px-2 py-1 md:py-0.5 bg-[#f4ead5]/40 md:bg-transparent rounded-xs border border-[#bfae96]/30 md:border-transparent md:ml-auto">
+          <span className="text-[10px] font-mono text-[#5a4838] font-bold uppercase tracking-wider flex items-center gap-1">
+            <span>👁️</span>
+            <span>Hide Above-Map Info:</span>
+          </span>
+          <button
+            onClick={() => setHideUpperDash(!hideUpperDash)}
+            className={`py-1 px-3 text-[9px] font-bold font-serif uppercase rounded border transition-colors cursor-pointer ${
+              hideUpperDash
+                ? "bg-[#c4451a] text-white border-red-950 shadow-sm"
+                : "bg-[#e8dec7] text-[#5a4838] border-[#bfae96] hover:bg-[#dfd4bd]"
+            }`}
+          >
+            {hideUpperDash ? "Hidden" : "Visible"}
+          </button>
+        </div>
+      </div>
+
+      <div
+        id="overland-map-screen"
+        className="grid grid-cols-12 gap-2 sm:gap-5 h-full"
+      >
+        {/* Interactive Map Layout */}
+        <div className={`${
+          mobilePaneMode === "left"
+            ? "col-span-12 flex"
+            : mobilePaneMode === "right"
+              ? "hidden"
+              : "col-span-7 flex" // Dual Pane
+        } lg:col-span-8 lg:flex flex-col bg-[#f4ead5] border border-[#bfae96] rounded-sm p-2 sm:p-4 h-full min-h-[360px] sm:min-h-[480px]`}>
+          {!hideUpperDash && (
+            <div className="flex items-center justify-between mb-4 pb-2.5 border-b border-[#bfae96]">
+              <div className="flex items-center gap-2">
+                <Compass size={16} className="text-[#8c6b0c] animate-spin-slow" />
+                <h2 className="text-xs font-serif tracking-wider font-bold text-[#8c6b0c] uppercase">
+                  New Mexico Badlands Territory Chart
+                </h2>
+              </div>
+              <div className="hidden sm:flex gap-3 text-[9px] font-mono text-[#664d36] uppercase tracking-wider font-semibold">
+                <span className="flex items-center gap-1">
+                  <span className="text-[#8c6b0c]">✦</span> Settlement
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-[#2a8ec4]">⚙</span> Railway
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-[#c4451a]">☠</span> Gang Haven
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-[#2a8ec4]">▲</span> Basin Oasis
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-[#664d36]">✝</span> Ruins
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-orange-400">⚒</span> Mine
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Dynamic Graphic SVG Map Container matching Immersive UI exactly */}
+          <div
+            className={`flex-1 bg-[radial-gradient(circle_at_center,_#e6d9b9_0%,_#d2bb95_100%)] border rounded-sm relative overflow-hidden group min-h-[220px] sm:min-h-[380px] transition-all duration-300 ${
+              player.hydration <= 0
+                ? "border-red-600/80 shadow-[inset_0_0_35px_rgba(185,28,28,0.4)]"
+                : "border-[#bfae96]"
+            }`}
+          >
           {/* Dehydration emergency warning flashing vignette */}
           {player.hydration <= 0 && (
             <div className="absolute inset-0 pointer-events-none z-30 animate-pulse shadow-[inset_0_0_50px_rgba(220,38,38,0.55)] border-2 border-red-600/60" />
@@ -2524,10 +2670,16 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
       </div>
 
       {/* Information Panel (Right-Side Control Center) */}
-      <div className="lg:col-span-4 flex flex-col gap-4 bg-[#f4ead5] border border-[#bfae96] p-5 rounded-sm h-full justify-between shadow-xl">
+      <div className={`${
+        mobilePaneMode === "right"
+          ? "col-span-12 flex"
+          : mobilePaneMode === "left"
+            ? "hidden"
+            : "col-span-5 flex" // Dual Pane
+      } lg:col-span-4 lg:flex flex-col gap-2 sm:gap-4 bg-[#f4ead5] border border-[#bfae96] p-3 sm:p-5 rounded-sm h-full justify-between shadow-xl`}>
         <div className="flex-1 flex flex-col">
           {/* Survival Instruments & Biome Tracker */}
-          <div className="bg-[#dcd1b9] border border-[#bfae96]/60 rounded-sm p-3.5 mb-4 space-y-2">
+          <div className="hidden lg:block bg-[#dcd1b9] border border-[#bfae96]/60 rounded-sm p-3.5 mb-4 space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-[9px] text-[#664d36] uppercase font-serif tracking-widest font-bold">
                 Trail Instruments
@@ -2672,7 +2824,7 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
             })()}
 
             {/* ACTIVE EFFECTS FEEDBACK CONTAINER */}
-            <div className="space-y-1.5 border-t border-[#bfae96]/40 pt-2 mt-1">
+            <div className="hidden lg:block space-y-1.5 border-t border-[#bfae96]/40 pt-2 mt-1">
               <span className="text-[8.5px] text-[#664d36] uppercase font-serif tracking-widest font-extrabold block">
                 Active Effects & Trail Penalties
               </span>
@@ -2750,6 +2902,14 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Mobile/Tablet button to toggle details */}
+            <button
+              onClick={() => setShowTrailInstrumentsModal(true)}
+              className="lg:hidden w-full mt-2 py-1.5 px-3 bg-[#e8dec7] hover:bg-[#dfd4bd] text-[#5a4838] border border-[#bfae96] rounded-xs text-[10px] font-bold font-serif uppercase tracking-wider flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            >
+              📋 View Trail Instruments & Effects
+            </button>
           </div>
 
           {/* Near Town Proximity Entry Button */}
@@ -3047,5 +3207,178 @@ export const OverlandMap: React.FC<OverlandMapProps> = ({
         </div>
       </div>
     </div>
+
+    {/* Trail Instruments & Effects Modal */}
+    {showTrailInstrumentsModal && (
+      <div
+        className="fixed inset-0 bg-black/80 flex items-center justify-center p-2 sm:p-4 z-[150] backdrop-blur-sm shadow-2xl"
+        onClick={() => setShowTrailInstrumentsModal(false)}
+      >
+        <div
+          className="bg-[#dcd1b9] w-full max-w-sm border-2 border-[#1a130f] rounded-sm p-4 sm:p-5 relative shadow-[0_0_50px_rgba(30,20,16,0.9)] max-h-[92vh] sm:max-h-[90vh] flex flex-col overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="absolute top-2 right-2 w-10 h-10 flex items-center justify-center text-3xl font-bold text-[#1a130f] hover:text-black hover:bg-black/5 rounded-full cursor-pointer z-50 transition-colors"
+            onClick={() => setShowTrailInstrumentsModal(false)}
+            aria-label="Close"
+          >
+            ×
+          </button>
+          <h2 className="text-sm font-bold uppercase text-[#1a130f] font-serif mb-3 pb-2 border-b border-[#1a130f]/20 pr-8 flex items-center gap-2">
+            <span>📋</span> Trail Instruments & Effects
+          </h2>
+
+          <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-0 space-y-4 my-2">
+            {/* Trail Instruments section */}
+            <div className="bg-[#f4ead5] border border-[#bfae96] p-4 rounded-sm space-y-2 shadow-inner text-[#4a3928]">
+              <span className="text-[11px] font-serif font-bold text-[#664d36] uppercase tracking-wider block border-b border-[#bfae96]/40 pb-1">
+                Trail Instruments
+              </span>
+              
+              <div className="flex justify-between items-center text-xs font-mono">
+                <span>Current Biome:</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono border ${getBiomeAt(playerX, playerY).color}`}>
+                  {getBiomeAt(playerX, playerY).icon} {getBiomeAt(playerX, playerY).name}
+                </span>
+              </div>
+
+              <div className="flex justify-between text-xs font-mono">
+                <span>Badlands Coords:</span>
+                <span className="text-[#8c6b0c] font-bold">
+                  ({Math.round(playerX)}°W, {Math.round(playerY)}°N)
+                </span>
+              </div>
+
+              <div className="flex justify-between text-xs font-mono">
+                <span>Local Time:</span>
+                <span className="text-[#8c6b0c] font-bold">
+                  {Math.floor(gameTimeHour) % 12 || 12}:
+                  {Math.floor((gameTimeHour % 1) * 60).toString().padStart(2, "0")}{" "}
+                  {gameTimeHour >= 12 ? "PM" : "AM"}
+                  {gameTimeHour >= 12 && gameTimeHour < 16 && " (Scorching Heat)"}
+                  {(gameTimeHour >= 20 || gameTimeHour < 6) && " (Nighttime Cooling)"}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center text-xs font-mono">
+                <span>Camp Behavior:</span>
+                <button
+                  onClick={() => setTravelByNight(!travelByNight)}
+                  className={`px-2 py-0.5 rounded uppercase font-bold text-[9px] border transition-colors ${travelByNight ? "bg-indigo-950 border-indigo-500 text-indigo-300" : "bg-[#f4ead5] border-[#bfae96] text-[#5a4838]"}`}
+                >
+                  {travelByNight ? "Travel By Night" : "Camp Overnight"}
+                </button>
+              </div>
+
+              <div className="flex justify-between text-xs font-mono">
+                <span>Weather Zone:</span>
+                <span className="text-[#2d2119] capitalize font-semibold">
+                  {getBiomeAt(playerX, playerY).desc}
+                </span>
+              </div>
+
+              <div className="flex justify-between text-xs font-mono">
+                <span>Atmosphere:</span>
+                <span className="text-amber-800 font-bold capitalize">
+                  {globalWeather}
+                </span>
+              </div>
+
+              {(player.scoutingSkill || 0) >= 3 && (
+                <div className="text-[9px] font-mono text-[#416827] bg-[#eef6eb] px-1.5 py-1 mt-1 border border-[#c3dfb8] rounded-sm">
+                  <span>🛰️ CARTOGRAPHER WARNING: Air pressure trends indicate stable {globalWeather} conditions.</span>
+                </div>
+              )}
+
+              {getBiomeAt(playerX, playerY).name === "River Valley" && (
+                <div className="flex justify-between items-center text-xs font-mono border-t border-[#bfae96]/30 pt-2 mt-2">
+                  <span>Fresh Water:</span>
+                  <button
+                    onClick={handleRefillCanteen}
+                    className="px-2 py-0.5 rounded bg-sky-900 border border-sky-500 text-sky-200 font-bold uppercase text-[9px] hover:bg-sky-800 transition-colors cursor-pointer"
+                  >
+                    Refill Canteen
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Vitals & active effects */}
+            <div className="bg-[#f4ead5] border border-[#bfae96] p-4 rounded-sm space-y-3 shadow-inner">
+              <span className="text-[11px] font-serif font-bold text-[#664d36] uppercase tracking-wider block border-b border-[#bfae96]/40 pb-1">
+                💧 Hydration & Active Effects
+              </span>
+
+              <div className="flex justify-between text-xs font-mono text-[#5a4838]">
+                <span>Body Water Level:</span>
+                <span className="font-bold">
+                  {Math.round(player.hydration)}% / {player.maxHydration ?? 100}%
+                </span>
+              </div>
+
+              {(() => {
+                const canteenItem = player.inventory.find((item) => item.id === "canteen");
+                const swigs = canteenItem ? canteenItem.count : 0;
+                return (
+                  <div className="flex justify-between items-center text-xs font-mono text-[#4a3928]">
+                    <span>🎒 Trail Canteen:</span>
+                    <span className={`font-bold ${swigs === 0 ? "text-red-700" : "text-sky-850"}`}>
+                      {swigs > 0 ? `💦 ${swigs} swigs` : "❌ Empty"}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              <div className="border-t border-[#bfae96]/40 pt-2 mt-2">
+                <span className="text-[9px] text-[#664d36] uppercase font-serif tracking-widest font-extrabold block mb-1.5">
+                  Active Effects & Trail Penalties
+                </span>
+
+                {player.hydration <= 0 ? (
+                  <div className="space-y-2 bg-red-950/10 border border-red-920/40 p-2.5 rounded-sm">
+                      <div className="text-[8.5px] font-bold text-red-800 uppercase flex items-center gap-1 leading-none border-b border-red-700/25 pb-1.5">
+                        ❌ ACTIVE DEBUFFS (DEHYDRATION SUN-STROKE):
+                      </div>
+                      <ul className="text-[9px] font-mono text-[#5f0303] leading-relaxed list-disc list-inside space-y-1 pl-0.5">
+                        <li>
+                          <span className="text-red-700 font-bold">Overland Speed:</span> Reduced to <b>{Math.round(Math.max(0, 1 - (player.hoursDehydrated || 0) / 72) * 100)}%</b> of normal.
+                        </li>
+                        <li>
+                          <span className="text-red-700 font-bold">Combat Reflexes:</span> Starts & retrieves <b>-50% AP</b>.
+                        </li>
+                        <li>
+                          <span className="text-red-700 font-bold">Resting Recovery:</span> Halted. No healing from camping.
+                        </li>
+                        <li>
+                          <span className="text-red-700 font-bold">Camp Security:</span> <b>+20% Ambush Chance</b>.
+                        </li>
+                      </ul>
+                  </div>
+                ) : (
+                  <div className="bg-[#e8dec7]/60 border border-[#bfae96]/30 p-2 rounded-sm text-[9px] font-mono text-[#5a4838]">
+                    <div className="text-emerald-800 font-bold uppercase flex items-center gap-1 mb-1">
+                      🟢 TRAIL FIT & COMFORTABLE:
+                    </div>
+                    <p className="leading-normal">
+                      You have ample hydration. Normal movement speed is active, stamina functions at 100%, and resting heals you fully.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowTrailInstrumentsModal(false)}
+            className="shrink-0 mt-2 w-full bg-[#1a130f] hover:bg-black text-[#dfd4bd] font-serif font-bold uppercase text-xs py-2.5 rounded transition-transform active:scale-95 cursor-pointer border border-transparent shadow-lg"
+          >
+            Close Instruments
+          </button>
+        </div>
+      </div>
+    )}
+    </div>
+    </>
   );
 };

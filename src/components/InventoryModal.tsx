@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Player, InventoryItem } from "../types";
+import { getMaxCapacity } from "../utils/trade";
 import {
   Package,
   X,
@@ -113,7 +114,7 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
       .reduce((sum, item) => sum + getItemWeight(item) * item.count, 0)
       .toFixed(1),
   );
-  const maxWeight = player.activeCarriage ? player.activeCarriage.maxWeight : 40.0;
+  const maxWeight = getMaxCapacity(player.hasHorse, player.activeCarriage?.type, player);
   const isOverburdened = totalWeight > maxWeight;
 
   // Active Equipped Weapon details

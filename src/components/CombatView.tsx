@@ -192,6 +192,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [playerShotsFired, setPlayerShotsFired] = useState(0);
   const [combatCycleEvasionActive, setCombatCycleEvasionActive] = useState(false);
   const [bulletStormActive, setBulletStormActive] = useState(false);
+
+  // Optimized dual-pane navigation state for mobile screens
+  const [mobilePaneMode, setMobilePaneMode] = useState<"left" | "right" | "dual">("dual");
+  const [hideUpperDash, setHideUpperDash] = useState(false);
+  const [showBodyStatusModal, setShowBodyStatusModal] = useState(false);
   const baseApFromLevel =
     Math.min(
       12,
@@ -225,6 +230,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
   const [clickEmptyActive, setClickEmptyActive] = useState(false);
 
   useEffect(() => {
+    /* Commented out automatic explaining tips per user request
     if (onTriggerTip) {
       if (combatType === "duel") {
         onTriggerTip(
@@ -240,6 +246,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
         );
       }
     }
+    */
   }, [combatType, onTriggerTip]);
 
   // QUICKDRAW STANDOFF DUEL SYSTEM
@@ -1633,6 +1640,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
     ]);
 
     // Auto-trigger environmental modal if there are modifiers (night and/or not clear sky weather)
+    // Commented out automatic explaining modals for now per user request
+    /*
     const currentIsNight =
       forcedTimeOfDay !== undefined && forcedTimeOfDay !== null
         ? forcedTimeOfDay === "night"
@@ -1641,6 +1650,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
     if (currentIsNight || chosenWeather.id !== "clear") {
       setShowEnvModal(true);
     }
+    */
   }, [
     combatType,
     difficultyRisk,
@@ -1857,7 +1867,10 @@ export const CombatView: React.FC<CombatViewProps> = ({
       logsToAdd.push(
         `⚠️ ${fastestEnemy.name} was faster and fired while you dived!`,
       );
-      const hitPercent = Math.max(0.1, fastestEnemy.accuracy - 0.25);
+      const isSlipperyPete =
+        activeProvokedNpcId === "slippery_pete" ||
+        fastestEnemy.name.toLowerCase().includes("pete");
+      const hitPercent = isSlipperyPete ? 0.5 : Math.max(0.1, fastestEnemy.accuracy - 0.25);
       const hit = Math.random() <= hitPercent;
 
       if (hit) {
@@ -1879,11 +1892,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
           );
 
           let finalDamage = hitResult.instantDeath ? playerHp : hitResult.dmg;
-          const isSlipperyPete =
-            activeProvokedNpcId === "slippery_pete" ||
-            fastestEnemy.name.toLowerCase().includes("pete");
           if (isSlipperyPete) {
-            finalDamage = Math.min(finalDamage, Math.max(0, playerHp - 1));
+            finalDamage = Math.min(finalDamage, 3);
           }
 
           pNextHp = Math.max(0, playerHp - finalDamage);
@@ -1895,7 +1905,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
             ),
           );
           logsToAdd.push(
-            `💥 BANG! ${fastestEnemy.name} hit you!\n${isSlipperyPete && finalDamage < (hitResult.instantDeath ? 9999 : hitResult.dmg) ? `🛡️ Bullet grazed your coat sleeve! Only took -${finalDamage} HP (left with 1 HP).` : hitResult.detail}`,
+            `💥 BANG! ${fastestEnemy.name} hit you!\n${isSlipperyPete && finalDamage < (hitResult.instantDeath ? 9999 : hitResult.dmg) ? `🛡️ Bullet grazed your coat sleeve! Only took -${finalDamage} HP.` : hitResult.detail}`,
           );
         }
       } else {
@@ -2120,7 +2130,11 @@ export const CombatView: React.FC<CombatViewProps> = ({
     setTimeout(() => setDuelFlash(false), 150);
     FrontierAudio.playGunshot();
 
-    const hitChance = currentActor.accuracy;
+    const isSlipperyPete =
+      activeProvokedNpcId === "slippery_pete" ||
+      currentActor.name.toLowerCase().includes("pete");
+
+    const hitChance = isSlipperyPete ? 0.5 : currentActor.accuracy;
     const hit = Math.random() < hitChance;
 
     if (hit) {
@@ -2135,11 +2149,8 @@ export const CombatView: React.FC<CombatViewProps> = ({
       );
 
       let finalDamage = hitResult.instantDeath ? playerHp : hitResult.dmg;
-      const isSlipperyPete =
-        activeProvokedNpcId === "slippery_pete" ||
-        currentActor.name.toLowerCase().includes("pete");
       if (isSlipperyPete) {
-        finalDamage = Math.min(finalDamage, Math.max(0, playerHp - 1));
+        finalDamage = Math.min(finalDamage, 3);
       }
 
       const nextHp = Math.max(0, playerHp - finalDamage);
@@ -2154,7 +2165,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
       );
       setDuelLogs((prev) => [
         ...prev,
-        `💥 BANG! ${currentActor.name} fired and hit you!\n${isSlipperyPete && finalDamage < (hitResult.instantDeath ? 9999 : hitResult.dmg) ? `🛡️ Bullet grazed your coat sleeve! Only took -${finalDamage} HP (left with 1 HP).` : hitResult.detail}`,
+        `💥 BANG! ${currentActor.name} fired and hit you!\n${isSlipperyPete && finalDamage < (hitResult.instantDeath ? 9999 : hitResult.dmg) ? `🛡️ Bullet grazed your coat sleeve! Only took -${finalDamage} HP.` : hitResult.detail}`,
       ]);
 
       if (nextHp <= 0) {
@@ -5259,8 +5270,15 @@ export const CombatView: React.FC<CombatViewProps> = ({
       } else if (isTargetVisible && finalDist <= effectiveRange) {
         if (isDisarmedHuman) {
           // Melee attack
-          const hitSuccess = Math.random() <= 0.7;
-          const bDmg = Math.round(enemy.dmg * 0.4);
+          const isSlipperyPete =
+            activeProvokedNpcId === "slippery_pete" ||
+            enemy.name.toLowerCase().includes("pete");
+          const hitChance = isSlipperyPete ? 0.5 : 0.7;
+          const hitSuccess = Math.random() <= hitChance;
+          let bDmg = Math.round(enemy.dmg * 0.4);
+          if (isSlipperyPete) {
+            bDmg = Math.min(bDmg, 3);
+          }
           if (hitSuccess) {
             if (isFriendlyAI || enemy.currentTargetInfo?.isPlayer === false) {
               setEnemies((prev) =>
@@ -5349,7 +5367,15 @@ export const CombatView: React.FC<CombatViewProps> = ({
             modifiedCalcValue = Math.max(0.05, Math.min(0.95, modifiedCalcValue));
           }
 
+          const isSlipperyPete =
+            activeProvokedNpcId === "slippery_pete" ||
+            enemy.name.toLowerCase().includes("pete");
+
           let hitSuccess = Math.random() <= modifiedCalcValue;
+          if (isSlipperyPete) {
+            hitSuccess = !isOutOfRange && Math.random() <= 0.5;
+          }
+
           drawShootLine(
             finalX,
             finalY,
@@ -5424,15 +5450,17 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 true,
                 enemyCritModifier,
               );
-              const nextHp = hitResult.instantDeath
-                ? 0
-                : Math.max(0, playerHp - hitResult.dmg);
+              let finalDmg = hitResult.instantDeath ? playerHp : hitResult.dmg;
+              if (isSlipperyPete) {
+                finalDmg = Math.min(finalDmg, 3);
+              }
+              const nextHp = Math.max(0, playerHp - finalDmg);
               setPlayerHp(nextHp);
               if (onUpdatePlayer) {
                 onUpdatePlayer({ ...player, hp: nextHp });
               }
               addLog(
-                `💥 Bullet hit! ${enemy.name} struck you!\n${hitResult.detail}`,
+                `💥 Bullet hit! ${enemy.name} struck you!\n${isSlipperyPete ? `🛡️ Bullet grazed your coat sleeve! Only took -${finalDmg} HP.` : hitResult.detail}`,
               );
 
               // Enemy shoots player's gun out of its hand or destroys a part (Medium to High level enemies only)
@@ -6040,177 +6068,247 @@ export const CombatView: React.FC<CombatViewProps> = ({
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full relative">
-      {/* CLICK-EMPTY FULL SCREEN WARNING OVERLAY */}
-      {clickEmptyActive && (
-        <div className="absolute inset-0 bg-red-950/40 backdrop-blur-sm z-50 flex items-center justify-center pointer-events-none animate-bounce">
-          <div className="bg-black/95 border-2 border-red-600 rounded-lg p-6 py-8 text-center max-w-sm mx-auto shadow-2xl relative">
-            <h2 className="text-xl font-extrabold text-red-500 uppercase tracking-widest font-serif">
-              ⚠️ CLICK - EMPTY!
-            </h2>
-            <p className="text-xs text-[#2d2119] font-mono mt-2">
-              Peacemaker cylinder is out of brass cartridges! {player.name} must
-              pull the lever & Reload.
-            </p>
-          </div>
-        </div>
-      )}
-      {/* 2D Grid Section */}
-      <div className="lg:col-span-8 bg-[#f4ead5] border border-[#bfae96] rounded-sm p-4 flex flex-col justify-between text-center min-h-[460px] shadow-xl">
-        {/* Banner */}
-        <div className="flex justify-between items-center pb-2 border-b border-[#bfae96] mb-2 text-xs flex-wrap gap-2">
-          <div className="flex items-center gap-1.5">
-            <Skull size={14} className="text-[#c4451a]" />
-            <span className="text-[#8c6b0c] font-serif font-bold uppercase tracking-widest">
-              Tactical Outlaw Crossfire Map
-            </span>
-          </div>
-
-          <div className="flex gap-4 text-[#664d36] font-serif uppercase tracking-wider font-semibold">
-            <span>
-              Enemies Remain:{" "}
-              <b className="text-[#c4451a] font-mono">{activeEnemiesCount}</b>
-            </span>
-            <span>
-              Firing Turn:{" "}
-              <b className="text-[#8c6b0c]">
-                {turn === "player"
-                  ? `🤠 ${player.name}`
-                  : "🤖 Deputies / Outlaws"}
-              </b>
-            </span>
-          </div>
-        </div>
-
-        {/* Turn Order Queue */}
-        <div className="flex items-center gap-2 mb-3 bg-[#1e1410]/5 p-2 rounded border border-[#bfae96] overflow-x-auto shadow-inner w-full custom-scrollbar">
-          <span className="text-[10px] uppercase font-serif tracking-widest text-[#a85a32] flex-shrink-0 font-bold mr-1">
-            Action Queue:
-          </span>
-          <div
-            className={`px-3 py-1.5 text-[10px] font-bold font-serif uppercase rounded border flex items-center gap-1.5 flex-shrink-0 transition-all ${turn === "player" ? "bg-[#c4451a] text-white border-red-950 scale-[1.02] shadow-md" : "bg-transparent text-[#a85a32] border-[#c4451a]/40 opacity-70"}`}
+    <div className="flex flex-col gap-2 h-full w-full">
+      {/* View settings & Header toggle */}
+      <div className="bg-[#dcd1b9] border border-[#bfae96] p-1.5 rounded-sm shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-2">
+        {/* Mobile-optimized dual pane view selector (Visible only on mobile/tablet) */}
+        <div className="grid grid-cols-3 gap-1 flex-1 lg:hidden">
+          <button
+            onClick={() => setMobilePaneMode("left")}
+            className={`py-1.5 px-1 text-[10px] font-bold font-serif uppercase rounded-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1 border ${
+              mobilePaneMode === "left"
+                ? "bg-[#1a130f] text-[#dfd4bd] border-black"
+                : "bg-transparent text-[#1a130f]/60 hover:bg-[#120c0a]/5 border-transparent"
+            }`}
           >
-            <img
-              src={overlandImg}
-              className="h-3 object-contain brightness-0 opacity-80"
-              style={{
-                filter:
-                  turn === "player" ? "invert(1)" : "grayscale(1) contrast(2)",
-              }}
-            />
-            <span>{turn === "player" ? "YOUR TURN" : player.name}</span>
+            <span>🗺️</span>
+            <span>Map Only</span>
+          </button>
+          <button
+            onClick={() => setMobilePaneMode("dual")}
+            className={`py-1.5 px-1 text-[10px] font-bold font-serif uppercase rounded-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1 border ${
+              mobilePaneMode === "dual"
+                ? "bg-[#1a130f] text-[#dfd4bd] border-black"
+                : "bg-transparent text-[#1a130f]/60 hover:bg-[#120c0a]/5 border-transparent"
+            }`}
+          >
+            <span>⚖️</span>
+            <span>Dual Pane</span>
+          </button>
+          <button
+            onClick={() => setMobilePaneMode("right")}
+            className={`py-1.5 px-1 text-[10px] font-bold font-serif uppercase rounded-xs transition-all cursor-pointer text-center flex items-center justify-center gap-1 border ${
+              mobilePaneMode === "right"
+                ? "bg-[#1a130f] text-[#dfd4bd] border-black"
+                : "bg-transparent text-[#1a130f]/60 hover:bg-[#120c0a]/5 border-transparent"
+            }`}
+          >
+            <span>📜</span>
+            <span>Commands</span>
+          </button>
+        </div>
+
+        {/* Global Compact Option to hide everything above map */}
+        <div className="flex items-center justify-between md:justify-end gap-3 px-2 py-1 md:py-0.5 bg-[#f4ead5]/40 md:bg-transparent rounded-xs border border-[#bfae96]/30 md:border-transparent md:ml-auto">
+          <span className="text-[10px] font-mono text-[#5a4838] font-bold uppercase tracking-wider flex items-center gap-1">
+            <span>👁️</span>
+            <span>Hide Above-Map Info:</span>
+          </span>
+          <button
+            onClick={() => setHideUpperDash(!hideUpperDash)}
+            className={`py-1 px-3 text-[9px] font-bold font-serif uppercase rounded border transition-colors cursor-pointer ${
+              hideUpperDash
+                ? "bg-[#c4451a] text-white border-red-950 shadow-sm"
+                : "bg-[#e8dec7] text-[#5a4838] border-[#bfae96] hover:bg-[#dfd4bd]"
+            }`}
+          >
+            {hideUpperDash ? "Hidden" : "Visible"}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-12 gap-2 sm:gap-5 h-full relative">
+        {/* CLICK-EMPTY FULL SCREEN WARNING OVERLAY */}
+        {clickEmptyActive && (
+          <div className="absolute inset-0 bg-red-950/40 backdrop-blur-sm z-50 flex items-center justify-center pointer-events-none animate-bounce">
+            <div className="bg-black/95 border-2 border-red-600 rounded-lg p-6 py-8 text-center max-w-sm mx-auto shadow-2xl relative">
+              <h2 className="text-xl font-extrabold text-red-500 uppercase tracking-widest font-serif">
+                ⚠️ CLICK - EMPTY!
+              </h2>
+              <p className="text-xs text-[#2d2119] font-mono mt-2">
+                Peacemaker cylinder is out of brass cartridges! {player.name} must
+                pull the lever & Reload.
+              </p>
+            </div>
           </div>
+        )}
+        {/* 2D Grid Section */}
+        <div className={`${
+          mobilePaneMode === "left"
+            ? "col-span-12 flex"
+            : mobilePaneMode === "right"
+              ? "hidden"
+              : "col-span-7 flex" // Dual Pane
+        } lg:col-span-8 lg:flex flex-col bg-[#f4ead5] border border-[#bfae96] rounded-sm p-2 sm:p-4 justify-between text-center min-h-[360px] sm:min-h-[460px] shadow-xl`}>
+        {/* Banner, Queue, Env, Log (Conditionally hidden for map focus) */}
+        {!hideUpperDash && (
+          <>
+            {/* Banner */}
+            <div className="flex justify-between items-center pb-2 border-b border-[#bfae96] mb-2 text-xs flex-wrap gap-2">
+              <div className="flex items-center gap-1.5">
+                <Skull size={14} className="text-[#c4451a]" />
+                <span className="text-[#8c6b0c] font-serif font-bold uppercase tracking-widest">
+                  Tactical Outlaw Crossfire Map
+                </span>
+              </div>
 
-          {enemies
-            .filter((e) => !e.isDead && !e.isSurrendered && !e.isUnconscious)
-            .map((e, idx) => {
-              const EnemyIcon =
-                e.type === "scorpion" ? "🦂" : getTacticalImage(e);
-              const isActive = turn === "enemy" && idx === activeAiEnemyIndex;
+              <div className="flex gap-4 text-[#664d36] font-serif uppercase tracking-wider font-semibold">
+                <span>
+                  Enemies Remain:{" "}
+                  <b className="text-[#c4451a] font-mono">{activeEnemiesCount}</b>
+                </span>
+                <span>
+                  Firing Turn:{" "}
+                  <b className="text-[#8c6b0c]">
+                    {turn === "player"
+                      ? `🤠 ${player.name}`
+                      : "🤖 Deputies / Outlaws"}
+                  </b>
+                </span>
+              </div>
+            </div>
 
-              return (
-                <div
-                  key={e.id}
-                  className={`px-2 py-1.5 text-[9px] font-bold font-serif uppercase rounded border flex-shrink-0 transition-all flex items-center gap-1 ${isActive ? "bg-[#5a4838] text-white border-[#3d2d21] scale-[1.02] shadow-md" : "bg-transparent text-[#8c6b0c] border-[#bfae96] opacity-60"}`}
-                >
-                  {e.type === "scorpion" ? (
-                    <span className="text-sm">{EnemyIcon as string}</span>
-                  ) : (
-                    <img
-                      src={EnemyIcon as string}
-                      className="h-4 w-4 object-contain"
-                    />
-                  )}
-                  <span className="truncate max-w-[80px]" title={e.name}>
-                    {e.name}
+            {/* Turn Order Queue */}
+            <div className="flex items-center gap-2 mb-3 bg-[#1e1410]/5 p-2 rounded border border-[#bfae96] overflow-x-auto shadow-inner w-full custom-scrollbar">
+              <span className="text-[10px] uppercase font-serif tracking-widest text-[#a85a32] flex-shrink-0 font-bold mr-1">
+                Action Queue:
+              </span>
+              <div
+                className={`px-3 py-1.5 text-[10px] font-bold font-serif uppercase rounded border flex items-center gap-1.5 flex-shrink-0 transition-all ${turn === "player" ? "bg-[#c4451a] text-white border-red-950 scale-[1.02] shadow-md" : "bg-transparent text-[#a85a32] border-[#c4451a]/40 opacity-70"}`}
+              >
+                <img
+                  src={overlandImg}
+                  className="h-3 object-contain brightness-0 opacity-80"
+                  style={{
+                    filter:
+                      turn === "player" ? "invert(1)" : "grayscale(1) contrast(2)",
+                  }}
+                />
+                <span>{turn === "player" ? "YOUR TURN" : player.name}</span>
+              </div>
+
+              {enemies
+                .filter((e) => !e.isDead && !e.isSurrendered && !e.isUnconscious)
+                .map((e, idx) => {
+                  const EnemyIcon =
+                    e.type === "scorpion" ? "🦂" : getTacticalImage(e);
+                  const isActive = turn === "enemy" && idx === activeAiEnemyIndex;
+
+                  return (
+                    <div
+                      key={e.id}
+                      className={`px-2 py-1.5 text-[9px] font-bold font-serif uppercase rounded border flex-shrink-0 transition-all flex items-center gap-1 ${isActive ? "bg-[#5a4838] text-white border-[#3d2d21] scale-[1.02] shadow-md" : "bg-transparent text-[#8c6b0c] border-[#bfae96] opacity-60"}`}
+                    >
+                      {e.type === "scorpion" ? (
+                        <span className="text-sm">{EnemyIcon as string}</span>
+                      ) : (
+                        <img
+                          src={EnemyIcon as string}
+                          className="h-4 w-4 object-contain"
+                        />
+                      )}
+                      <span className="truncate max-w-[80px]" title={e.name}>
+                        {e.name}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Procedural Environment Dashboard */}
+            <div
+              id="procedural-env-dashboard"
+              className="grid grid-cols-3 gap-2 mb-2"
+            >
+              <div
+                id="env-card-biome"
+                onClick={() => setShowEnvModal(true)}
+                className="bg-[#120c0a]/95 border border-[#bfae96] hover:border-amber-500 hover:bg-[#1a120e]/95 cursor-pointer transition-colors p-1.5 rounded-sm flex items-center gap-1.5"
+              >
+                <span className="text-sm p-1 bg-[#1e1410] rounded border border-[#e8b923]/20 shadow">
+                  {combatBiome.icon}
+                </span>
+                <div className="flex flex-col text-left overflow-hidden">
+                  <span className="text-[6.5px] text-[#664d36] uppercase font-serif tracking-widest font-extrabold leading-none mb-0.5">
+                    Arena
+                  </span>
+                  <span className="text-[9.5px] text-[#8c6b0c] font-bold font-serif leading-none truncate">
+                    {combatBiome.name}
                   </span>
                 </div>
-              );
-            })}
-        </div>
-
-        {/* Procedural Environment Dashboard */}
-        <div
-          id="procedural-env-dashboard"
-          className="grid grid-cols-3 gap-2 mb-2"
-        >
-          <div
-            id="env-card-biome"
-            onClick={() => setShowEnvModal(true)}
-            className="bg-[#120c0a]/95 border border-[#bfae96] hover:border-amber-500 hover:bg-[#1a120e]/95 cursor-pointer transition-colors p-1.5 rounded-sm flex items-center gap-1.5"
-          >
-            <span className="text-sm p-1 bg-[#1e1410] rounded border border-[#e8b923]/20 shadow">
-              {combatBiome.icon}
-            </span>
-            <div className="flex flex-col text-left overflow-hidden">
-              <span className="text-[6.5px] text-[#664d36] uppercase font-serif tracking-widest font-extrabold leading-none mb-0.5">
-                Arena
-              </span>
-              <span className="text-[9.5px] text-[#8c6b0c] font-bold font-serif leading-none truncate">
-                {combatBiome.name}
-              </span>
-            </div>
-          </div>
-          <div
-            id="env-card-weather"
-            onClick={() => setShowEnvModal(true)}
-            className="bg-[#120c0a]/95 border border-[#bfae96] hover:border-amber-500 hover:bg-[#1a120e]/95 cursor-pointer transition-colors p-1.5 rounded-sm flex items-center gap-1.5"
-          >
-            <span className="text-sm p-1 bg-[#1e1410] rounded border border-[#e8b923]/20 shadow">
-              {combatWeather.icon}
-            </span>
-            <div className="flex flex-col text-left overflow-hidden">
-              <span className="text-[6.5px] text-[#664d36] uppercase font-serif tracking-widest font-extrabold leading-none mb-0.5">
-                Climate
-              </span>
-              <span className="text-[9.5px] text-sky-400 font-bold font-serif leading-none truncate">
-                {combatWeather.name}
-              </span>
-            </div>
-          </div>
-          <div
-            id="env-card-time"
-            onClick={() => setShowEnvModal(true)}
-            className="bg-[#120c0a]/95 border border-[#bfae96] hover:border-amber-500 hover:bg-[#1a120e]/95 cursor-pointer transition-colors p-1.5 rounded-sm flex items-center gap-1.5"
-          >
-            <span className="text-sm p-1 bg-[#1e1410] rounded border border-[#e8b923]/20 shadow">
-              {isNight ? "🌙" : "☀️"}
-            </span>
-            <div className="flex flex-col text-left overflow-hidden">
-              <span className="text-[6.5px] text-[#664d36] uppercase font-serif tracking-widest font-extrabold leading-none mb-0.5">
-                Time
-              </span>
-              <span className="text-[9.5px] text-orange-300 font-bold font-serif leading-none truncate">
-                {isNight ? "Nightfall - Low Vis" : "Daylight"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Realtime Action combat log (Moved from below) */}
-        <div className="mb-3 bg-[#1e1410] border-l-4 border-[#e8b923] p-3 text-left rounded-sm flex flex-col shadow-inner min-h-[50px] border border-[#bfae96]/30">
-          <div className="flex justify-between items-center border-b border-[#bfae96]/20 pb-1 mb-1.5">
-            <span className="text-[9px] font-serif text-[#e8b923] uppercase tracking-widest font-bold">
-              Action Feedback Console
-            </span>
-          </div>
-
-          <div className="flex-1 overflow-hidden space-y-1 font-mono text-[9.5px] pr-1 flex flex-col justify-end">
-            {combatLogs
-              .slice(-2)
-              .reverse()
-              .map((log, lIdx) => (
-                <div
-                  key={lIdx}
-                  className={`leading-tight truncate ${lIdx === 0 ? "text-[#c4451a] font-bold opacity-100" : "text-zinc-400 opacity-80"}`}
-                  title={log}
-                >
-                  <span className="mr-1">{lIdx === 0 ? "▶" : "·"}</span>
-                  {log}
+              </div>
+              <div
+                id="env-card-weather"
+                onClick={() => setShowEnvModal(true)}
+                className="bg-[#120c0a]/95 border border-[#bfae96] hover:border-amber-500 hover:bg-[#1a120e]/95 cursor-pointer transition-colors p-1.5 rounded-sm flex items-center gap-1.5"
+              >
+                <span className="text-sm p-1 bg-[#1e1410] rounded border border-[#e8b923]/20 shadow">
+                  {combatWeather.icon}
+                </span>
+                <div className="flex flex-col text-left overflow-hidden">
+                  <span className="text-[6.5px] text-[#664d36] uppercase font-serif tracking-widest font-extrabold leading-none mb-0.5">
+                    Climate
+                  </span>
+                  <span className="text-[9.5px] text-sky-400 font-bold font-serif leading-none truncate">
+                    {combatWeather.name}
+                  </span>
                 </div>
-              ))}
-          </div>
-        </div>
+              </div>
+              <div
+                id="env-card-time"
+                onClick={() => setShowEnvModal(true)}
+                className="bg-[#120c0a]/95 border border-[#bfae96] hover:border-amber-500 hover:bg-[#1a120e]/95 cursor-pointer transition-colors p-1.5 rounded-sm flex items-center gap-1.5"
+              >
+                <span className="text-sm p-1 bg-[#1e1410] rounded border border-[#e8b923]/20 shadow">
+                  {isNight ? "🌙" : "☀️"}
+                </span>
+                <div className="flex flex-col text-left overflow-hidden">
+                  <span className="text-[6.5px] text-[#664d36] uppercase font-serif tracking-widest font-extrabold leading-none mb-0.5">
+                    Time
+                  </span>
+                  <span className="text-[9.5px] text-orange-300 font-bold font-serif leading-none truncate">
+                    {isNight ? "Nightfall - Low Vis" : "Daylight"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Realtime Action combat log (Moved from below) */}
+            <div className="mb-3 bg-[#1e1410] border-l-4 border-[#e8b923] p-3 text-left rounded-sm flex flex-col shadow-inner min-h-[50px] border border-[#bfae96]/30">
+              <div className="flex justify-between items-center border-b border-[#bfae96]/20 pb-1 mb-1.5">
+                <span className="text-[9px] font-serif text-[#e8b923] uppercase tracking-widest font-bold">
+                  Action Feedback Console
+                </span>
+              </div>
+
+              <div className="flex-1 overflow-hidden space-y-1 font-mono text-[9.5px] pr-1 flex flex-col justify-end">
+                {combatLogs
+                  .slice(-2)
+                  .reverse()
+                  .map((log, lIdx) => (
+                    <div
+                      key={lIdx}
+                      className={`leading-tight truncate ${lIdx === 0 ? "text-[#c4451a] font-bold opacity-100" : "text-zinc-400 opacity-80"}`}
+                      title={log}
+                    >
+                      <span className="mr-1">{lIdx === 0 ? "▶" : "·"}</span>
+                      {log}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Tactical board */}
         <div className="flex-1 flex items-center justify-center p-2">
@@ -6679,7 +6777,13 @@ export const CombatView: React.FC<CombatViewProps> = ({
       </div>
 
       {/* Control Panel (Console Controls & Logs side) */}
-      <div className="lg:col-span-4 flex flex-col gap-4 bg-[#f4ead5] border border-[#bfae96] p-5 rounded-sm justify-between shadow-xl">
+      <div className={`${
+        mobilePaneMode === "right"
+          ? "col-span-12 flex"
+          : mobilePaneMode === "left"
+            ? "hidden"
+            : "col-span-5 flex" // Dual Pane
+      } lg:col-span-4 lg:flex flex-col gap-2 sm:gap-4 bg-[#f4ead5] border border-[#bfae96] p-3 sm:p-5 rounded-sm justify-between shadow-xl`}>
         {/* Stats and Action Dashboard */}
         <div className="space-y-4">
           <div className="flex border-b border-[#bfae96] pb-2.5 items-center justify-between">
@@ -6733,7 +6837,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
             </div>
 
             {/* Visual Body Integrity */}
-            <div className="flex flex-row items-center border-t border-[#bfae96] pt-2 mt-2">
+            <div className="hidden lg:flex flex-row items-center border-t border-[#bfae96] pt-2 mt-2">
               <BodySilhouette injuries={playerInjuries} />
               <div className="flex flex-col ml-3 text-[9px] font-mono uppercase text-[#4a3928] gap-1">
                 <span className="font-bold flex items-center gap-1">
@@ -6755,7 +6859,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
               </div>
             </div>
 
-            <div className="flex justify-between text-[10px] pt-2 border-t border-[#bfae96]/40 text-[#4a3928] uppercase tracking-wider font-serif mb-2">
+            <div className="hidden lg:flex justify-between text-[10px] pt-2 border-t border-[#bfae96]/40 text-[#4a3928] uppercase tracking-wider font-serif mb-2">
               <span>Baggage: {totalWeight} / 40 lbs</span>
               <span>
                 Revolver clip: {playerClip} /{" "}
@@ -6763,7 +6867,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                   (player.weaponUpgrades?.clipBonus || 0)}
               </span>
             </div>
-            <div className="flex justify-between items-center text-[10px] pt-1 border-t border-[#bfae96]/40 text-[#4a3928] uppercase tracking-wider font-serif">
+            <div className="hidden lg:flex justify-between items-center text-[10px] pt-1 border-t border-[#bfae96]/40 text-[#4a3928] uppercase tracking-wider font-serif">
               <span>Reserve Ammo</span>
               <span
                 className={`font-mono font-bold ${playerReserveAmmo === 0 ? "text-red-600 animate-pulse" : "text-[#2a8ec4]"}`}
@@ -6771,7 +6875,7 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 {playerReserveAmmo} RDS
               </span>
             </div>
-            <div className="flex justify-between items-center text-[10px] pt-1 border-t border-[#bfae96]/40 text-[#4a3928] uppercase tracking-wider font-serif">
+            <div className="hidden lg:flex justify-between items-center text-[10px] pt-1 border-t border-[#bfae96]/40 text-[#4a3928] uppercase tracking-wider font-serif">
               <span>Condition</span>
               <span
                 className={`font-mono font-bold ${(player.weapon.condition ?? 100) < 40 ? "text-red-600 animate-pulse" : "text-[#2a8ec4]"}`}
@@ -6779,6 +6883,14 @@ export const CombatView: React.FC<CombatViewProps> = ({
                 {Math.round(player.weapon.condition ?? 100)}%
               </span>
             </div>
+
+            {/* Mobile/Tablet button to toggle details */}
+            <button
+              onClick={() => setShowBodyStatusModal(true)}
+              className="lg:hidden w-full mt-2 py-1.5 px-3 bg-[#e8dec7] hover:bg-[#dfd4bd] text-[#5a4838] border border-[#bfae96] rounded-xs text-[10px] font-bold font-serif uppercase tracking-wider flex items-center justify-center gap-1 shadow-sm cursor-pointer"
+            >
+              👤 View Body & Gun Details
+            </button>
           </div>
 
           {/* Injury status check */}
@@ -7062,80 +7174,203 @@ export const CombatView: React.FC<CombatViewProps> = ({
       {/* Environment Detail Modal */}
       {showEnvModal && (
         <div
-          className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-[150] backdrop-blur-sm shadow-2xl"
+          className="fixed inset-0 bg-black/80 flex items-center justify-center p-2 sm:p-4 z-[150] backdrop-blur-sm shadow-2xl"
           onClick={() => setShowEnvModal(false)}
         >
           <div
-            className="bg-[#dcd1b9] w-full max-w-sm border border-[#1a130f] rounded p-5 relative shadow-[0_0_50px_rgba(30,20,16,0.9)]"
+            className="bg-[#dcd1b9] w-full max-w-sm border-2 border-[#1a130f] rounded-sm p-4 sm:p-5 relative shadow-[0_0_50px_rgba(30,20,16,0.9)] max-h-[92vh] sm:max-h-[90vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              className="absolute top-2 right-2 text-2xl text-[#1a130f] opacity-60 hover:opacity-100"
+              className="absolute top-2 right-2 w-10 h-10 flex items-center justify-center text-3xl font-bold text-[#1a130f] hover:text-black hover:bg-black/5 rounded-full cursor-pointer z-50 transition-colors"
               onClick={() => setShowEnvModal(false)}
+              aria-label="Close"
             >
               ×
             </button>
-            <h2 className="text-xl font-bold uppercase text-[#1a130f] font-serif mb-4 pb-2 border-b border-[#1a130f]/20">
+            <h2 className="text-xl font-bold uppercase text-[#1a130f] font-serif mb-3 pb-2 border-b border-[#1a130f]/20 pr-8">
               Battlefield Conditions
             </h2>
 
-            <div className="space-y-4 text-sm font-sans text-[#3d2d21]">
-              <div className="bg-[#120c0a]/10 p-3 rounded border border-[#1a130f]/10">
-                <div className="font-bold font-serif text-[#c4451a] mb-1 flex items-center gap-1.5">
-                  <span className="text-lg">{combatBiome.icon}</span>{" "}
-                  {combatBiome.name}
+            <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-0 space-y-4 my-2">
+              <div className="space-y-4 text-sm font-sans text-[#3d2d21]">
+                <div className="bg-[#120c0a]/10 p-3 rounded border border-[#1a130f]/10">
+                  <div className="font-bold font-serif text-[#c4451a] mb-1 flex items-center gap-1.5">
+                    <span className="text-lg">{combatBiome.icon}</span>{" "}
+                    {combatBiome.name}
+                  </div>
+                  <p className="text-xs leading-relaxed italic opacity-90">
+                    {combatBiome.description}
+                  </p>
                 </div>
-                <p className="text-xs leading-relaxed italic opacity-90">
-                  {combatBiome.description}
-                </p>
-              </div>
 
-              <div className="bg-[#120c0a]/10 p-3 rounded border border-[#1a130f]/10">
-                <div className="font-bold font-serif text-sky-700 mb-1 flex items-center gap-1.5">
-                  <span className="text-lg">{combatWeather.icon}</span>{" "}
-                  {combatWeather.name}
-                </div>
-                <p className="text-xs leading-relaxed italic opacity-90 mb-1.5">
-                  {combatWeather.description}
-                </p>
-                <div className="bg-[#1a130f] text-[#e8dec7] text-[10px] p-2 rounded">
-                  <span className="font-bold text-[#c4451a] uppercase text-[9px] block mb-0.5">
-                    Effect:
-                  </span>
-                  {combatWeather.effectText}
-                </div>
-              </div>
-
-              <div className="bg-[#120c0a]/10 p-3 rounded border border-[#1a130f]/10">
-                <div className="font-bold font-serif text-amber-900 mb-1 flex items-center gap-1.5">
-                  <span className="text-lg">{isNight ? "🌙" : "☀️"}</span>{" "}
-                  {isNight ? "Nightfall" : "Daylight"}
-                </div>
-                <p className="text-xs leading-relaxed italic opacity-90 mb-1.5">
-                  {isNight
-                    ? "The moon attempts to pierce the gloom. Darkness heavily penalizes accuracy. Lanterns and campfires provide small radiuses of illuminated safety (the bright orange borders)."
-                    : "Clear high noon or crisp morning light. Base visibility is strong, but weather conditions (like fog or mirages) will still impact your effective line of sight."}
-                </p>
-                {isNight && (
+                <div className="bg-[#120c0a]/10 p-3 rounded border border-[#1a130f]/10">
+                  <div className="font-bold font-serif text-sky-700 mb-1 flex items-center gap-1.5">
+                    <span className="text-lg">{combatWeather.icon}</span>{" "}
+                    {combatWeather.name}
+                  </div>
+                  <p className="text-xs leading-relaxed italic opacity-90 mb-1.5">
+                    {combatWeather.description}
+                  </p>
                   <div className="bg-[#1a130f] text-[#e8dec7] text-[10px] p-2 rounded">
                     <span className="font-bold text-[#c4451a] uppercase text-[9px] block mb-0.5">
-                      Night Rules:
+                      Effect:
                     </span>
-                    Obscured targets: -10% Hit Chance, -1 Range.
+                    {combatWeather.effectText}
                   </div>
-                )}
+                </div>
+
+                <div className="bg-[#120c0a]/10 p-3 rounded border border-[#1a130f]/10">
+                  <div className="font-bold font-serif text-amber-900 mb-1 flex items-center gap-1.5">
+                    <span className="text-lg">{isNight ? "🌙" : "☀️"}</span>{" "}
+                    {isNight ? "Nightfall" : "Daylight"}
+                  </div>
+                  <p className="text-xs leading-relaxed italic opacity-90 mb-1.5">
+                    {isNight
+                      ? "The moon attempts to pierce the gloom. Darkness heavily penalizes accuracy. Lanterns and campfires provide small radiuses of illuminated safety (the bright orange borders)."
+                      : "Clear high noon or crisp morning light. Base visibility is strong, but weather conditions (like fog or mirages) will still impact your effective line of sight."}
+                  </p>
+                  {isNight && (
+                    <div className="bg-[#1a130f] text-[#e8dec7] text-[10px] p-2 rounded">
+                      <span className="font-bold text-[#c4451a] uppercase text-[9px] block mb-0.5">
+                        Night Rules:
+                      </span>
+                      Obscured targets: -10% Hit Chance, -1 Range.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
             <button
               onClick={() => setShowEnvModal(false)}
-              className="mt-5 w-full bg-[#1a130f] hover:bg-black text-[#dfd4bd] font-serif font-bold uppercase text-xs py-2.5 rounded transition-transform active:scale-95 cursor-pointer border border-transparent shadow-lg"
+              className="shrink-0 mt-2 w-full bg-[#1a130f] hover:bg-black text-[#dfd4bd] font-serif font-bold uppercase text-xs py-2.5 rounded transition-transform active:scale-95 cursor-pointer border border-transparent shadow-lg"
             >
               Return to Combat
             </button>
           </div>
         </div>
       )}
+
+      {/* Body & Gun Status Modal */}
+      {showBodyStatusModal && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center p-2 sm:p-4 z-[150] backdrop-blur-sm shadow-2xl"
+          onClick={() => setShowBodyStatusModal(false)}
+        >
+          <div
+            className="bg-[#dcd1b9] w-full max-w-sm border-2 border-[#1a130f] rounded-sm p-4 sm:p-5 relative shadow-[0_0_50px_rgba(30,20,16,0.9)] max-h-[92vh] sm:max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="absolute top-2 right-2 w-10 h-10 flex items-center justify-center text-3xl font-bold text-[#1a130f] hover:text-black hover:bg-black/5 rounded-full cursor-pointer z-50 transition-colors"
+              onClick={() => setShowBodyStatusModal(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2 className="text-sm font-bold uppercase text-[#1a130f] font-serif mb-3 pb-2 border-b border-[#1a130f]/20 pr-8 flex items-center gap-2">
+              <span>👤</span> Player Body & Weapon Details
+            </h2>
+
+            <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-0 space-y-4 my-2">
+              {/* Visual Body Integrity */}
+              <div className="bg-[#f4ead5] border border-[#bfae96] p-4 rounded-sm flex flex-col items-center shadow-inner">
+                <span className="text-[11px] font-serif font-bold text-[#664d36] uppercase tracking-wider mb-2">
+                  Body Integrity (Hit Zones)
+                </span>
+                <div className="flex flex-row items-center justify-center gap-6 w-full">
+                  <BodySilhouette injuries={playerInjuries} />
+                  <div className="flex flex-col text-[10px] font-mono uppercase text-[#4a3928] gap-1.5">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-[#9ca3af] rounded-full"></div>{" "}
+                      Clean
+                    </span>
+                    <span className="font-bold flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-[#eab308] rounded-full"></div>{" "}
+                      Injured
+                    </span>
+                    <span className="font-bold flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-[#f97316] rounded-full"></div>{" "}
+                      Mangled
+                    </span>
+                    <span className="font-bold flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 bg-[#ef4444] rounded-full"></div>{" "}
+                      Crippled
+                    </span>
+                  </div>
+                </div>
+
+                <div className="w-full mt-3 border-t border-[#bfae96]/40 pt-2 text-[9.5px] font-sans text-[#5a4838] leading-relaxed space-y-1">
+                  <div className="flex justify-between">
+                    <span className="font-semibold">🧠 Head:</span>
+                    <span className="font-mono font-bold">{playerInjuries.parts.HEAD.integrity}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold">🫁 Torso:</span>
+                    <span className="font-mono font-bold">{playerInjuries.parts.TORSO.integrity}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold">💪 Trigger Arm:</span>
+                    <span className="font-mono font-bold">{playerInjuries.parts.RIGHT_ARM.integrity}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold">🤚 Shield Arm:</span>
+                    <span className="font-mono font-bold">{playerInjuries.parts.LEFT_ARM.integrity}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold">🦵 Legs / Stance:</span>
+                    <span className="font-mono font-bold">{playerInjuries.parts.LEGS.integrity}%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Weapon Details */}
+              <div className="bg-[#f4ead5] border border-[#bfae96] p-4 rounded-sm space-y-3 shadow-inner text-[#4a3928]">
+                <span className="text-[11px] font-serif font-bold text-[#664d36] uppercase tracking-wider block border-b border-[#bfae96]/40 pb-1">
+                  Gun & Ammo Stats
+                </span>
+
+                <div className="flex justify-between text-xs font-serif uppercase">
+                  <span>Baggage Weight:</span>
+                  <span className="font-mono font-bold">{totalWeight} / 40 lbs</span>
+                </div>
+
+                <div className="flex justify-between text-xs font-serif uppercase">
+                  <span>Revolver Clip:</span>
+                  <span className="font-mono font-bold">
+                    {playerClip} /{" "}
+                    {player.weapon.maxClip +
+                      (player.weaponUpgrades?.clipBonus || 0)}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-xs font-serif uppercase">
+                  <span>Reserve Ammo:</span>
+                  <span className={`font-mono font-bold ${playerReserveAmmo === 0 ? "text-red-600 animate-pulse" : "text-[#2a8ec4]"}`}>
+                    {playerReserveAmmo} RDS
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-xs font-serif uppercase">
+                  <span>Weapon Condition:</span>
+                  <span className={`font-mono font-bold ${(player.weapon.condition ?? 100) < 40 ? "text-red-600 animate-pulse" : "text-[#2a8ec4]"}`}>
+                    {Math.round(player.weapon.condition ?? 100)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowBodyStatusModal(false)}
+              className="shrink-0 mt-2 w-full bg-[#1a130f] hover:bg-black text-[#dfd4bd] font-serif font-bold uppercase text-xs py-2.5 rounded transition-transform active:scale-95 cursor-pointer border border-transparent shadow-lg"
+            >
+              Close Status
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
     </div>
   );
 };
